@@ -1,6 +1,6 @@
 # Weather Query Agent MVP
 
-一个带可视化聊天界面的规则驱动中文天气查询 Agent MVP。它提供网页首页和 `POST /chat`，支持多城市、动态城市搜索、常见错别字纠正及按问题意图回答，并用内存字典保存同一 `session_id` 的对话上下文。
+一个以天气为核心的轻量 AI Agent。它提供网页首页和 `POST /chat`：未配置模型时仍是免费的规则天气助手；配置 OpenAI 兼容模型后，可以进行普通聊天、多轮对话，并由模型按需调用只读天气工具取得真实数据。
 
 ## 功能
 
@@ -14,12 +14,17 @@
 - 提供仅限本机访问的 API 配置页，可在运行期间新增或更新天气服务凭据。
 - 返回摄氏温度、天气状况、湿度、风速、是否预期下雨，以及明天的简单建议。
 - 一次请求最多提取 5 个城市，并按用户输入顺序返回结果。
+- 可选连接 OpenAI、DeepSeek、OpenRouter、本机 Ollama 或自定义 OpenAI 兼容接口。
+- AI 模型只拥有 `get_weather` 工具；不能执行命令、浏览网页、读写文件或控制电脑。
+- 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多调用两次天气工具。
 
 ## 项目结构
 
 ```text
 .
 ├── app.py
+├── agent.py
+├── llm_client.py
 ├── config.py
 ├── conversation.py
 ├── geocoding.py
@@ -48,6 +53,10 @@
 │   └── todo.md
 └── tests/
     ├── test_app.py
+    ├── test_agent.py
+    ├── test_ai_chat.py
+    ├── test_llm_client.py
+    ├── test_llm_config.py
     ├── test_config.py
     ├── test_parser.py
     ├── test_openmeteo_client.py
@@ -63,7 +72,7 @@
 
 需要 Python 3.9 或更高版本。使用和风天气时，需要在和风天气控制台创建 API Key，并复制控制台分配的专属 API Host。
 
-### 最快体验（Open-Meteo，无需 API Key）
+### 最快体验（天气模式，无需任何 API Key）
 
 ```powershell
 py -3 -m venv .venv
@@ -98,15 +107,46 @@ python app.py
 
 服务默认监听 `http://127.0.0.1:5000`。
 
+### 开启 AI Agent 模式
+
+保持 Flask 运行，在浏览器打开 <http://127.0.0.1:5000/settings>，找到“连接 AI 模型”：
+
+1. 选择 OpenAI、DeepSeek、OpenRouter、本机 Ollama 或自定义兼容接口；
+2. 输入该服务实际存在且支持工具调用的模型 ID；
+3. 在线服务输入 API Key；Ollama 本机模式不需要真实 Key；
+4. 保存后返回聊天页，页面显示“AI 对话已开启”。
+
+例如使用 DeepSeek 环境变量持久配置：
+
+```powershell
+$env:LLM_BASE_URL = "https://api.deepseek.com"
+$env:LLM_API_KEY = "你的 DeepSeek API Key"
+$env:LLM_MODEL = "deepseek-v4-flash"
+$env:LLM_DISPLAY_NAME = "DeepSeek"
+python app.py
+```
+
+例如连接已在本机运行并已拉取模型的 Ollama：
+
+```powershell
+$env:LLM_BASE_URL = "http://127.0.0.1:11434/v1"
+$env:LLM_MODEL = "qwen3:8b"
+$env:LLM_DISPLAY_NAME = "Ollama（本机）"
+Remove-Item Env:LLM_API_KEY -ErrorAction SilentlyContinue
+python app.py
+```
+
+外部自定义模型地址必须使用 HTTPS；只有 `localhost`、`127.0.0.1` 或 `::1` 可以使用 HTTP。选择的模型必须支持 OpenAI 风格的 Chat Completions 和 function/tool calling。
+
 ## 使用可视化平台
 
 保持运行 `python app.py` 的 PowerShell 窗口不要关闭，然后在浏览器打开：
 
 <http://127.0.0.1:5000>
 
-在输入框中可以直接询问完整天气、单项指标或出行建议。查询成功后可以继续输入 `那后天呢？`；当 Agent 询问是否需要完整天气时，也可以回复 `需要`。网页会沿用当前页面中的会话 ID，后端会记住上一轮的城市、日期和问题类型。右上角的数据源下拉框可以自由切换；Open-Meteo 始终可用，其他数据源在配置对应凭据后显示。
+在输入框中可以直接询问完整天气、单项指标或出行建议。启用 AI 后还可以进行基础问答、解释、写作和总结；天气问题会自动调用真实数据源。网页会沿用当前页面中的会话 ID，后端最多保留最近 12 条普通对话消息，并记住天气上下文。右上角的数据源下拉框可以自由切换；Open-Meteo 始终可用，其他数据源在配置对应凭据后显示。
 
-点击聊天页右上角的“配置 API”，或直接打开 <http://127.0.0.1:5000/settings>，可以选择 OpenWeather、和风天气、WeatherAPI.com 或 Visual Crossing 并输入配置。Key 只发送到本机 Flask，保存在当前 Python 进程内存中，不写入浏览器、本地文件、日志或 Git；重启 Flask 后运行时配置会清空。配置页和配置接口只允许从 `127.0.0.1` 或 `::1` 访问。
+点击聊天页右上角的“配置 Agent”，或直接打开 <http://127.0.0.1:5000/settings>，可以配置天气数据源与 AI 模型。Key 只发送到本机 Flask，保存在当前 Python 进程内存中，不写入浏览器、本地文件、日志或 Git；重启 Flask 后运行时配置会清空。配置页和配置接口只允许从 `127.0.0.1` 或 `::1` 访问。
 
 如果希望重启后仍自动加载 Provider，请继续使用环境变量方式配置。
 
@@ -121,9 +161,11 @@ python app.py
 
 生产环境会自动关闭 `/settings` 和 `/api/providers`，并对 `/chat` 启用每个客户端每分钟 30 次的内存限流。详细操作、验证和回滚步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
+如需在 Render 开启 AI，把 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_DISPLAY_NAME` 和对应的 `LLM_API_KEY` 作为 Secret 环境变量配置。生产环境同时关闭 `/api/llm`；不要把真实 Key 写进 `render.yaml` 或提交到 Git。
+
 ## 测试
 
-测试不会访问真实天气服务，而是对五个 Provider 的上游响应使用可控的测试替身：
+测试不会访问真实天气或模型服务，而是对五个天气 Provider 和模型响应使用可控的测试替身：
 
 ```bash
 python -m pytest -q
@@ -146,6 +188,8 @@ curl -X POST http://127.0.0.1:5000/chat \
 如果不传 `session_id`，服务会生成一个随机会话 ID，并在成功响应中返回；客户端需要保存它以便继续多轮对话。
 
 `provider` 也是可选字段：未传时使用 `WEATHER_PROVIDER`，可选值为 `openmeteo`、`openweather`、`qweather`、`weatherapi` 或 `visualcrossing`。`openmeteo` 无需凭据；其他 Provider 只有配置对应凭据后才能选择。
+
+配置模型后，成功响应增加 `mode: "agent"`、`model` 和 `tool_used`。普通聊天只返回文本；天气工具调用仍返回兼容的 `city`、`weather` 与 `results`。未配置模型时，非天气消息返回 `AI_NOT_CONFIGURED`，不会把普通问题误当成城市查询。
 
 如果需要同时启用全部 Provider（Open-Meteo 会自动启用）：
 
@@ -192,6 +236,9 @@ python app.py
 
 - 会话状态只在当前 Python 进程内存中；重启服务或使用多进程部署后不会共享。生产化时可把 `InMemorySessionStore` 替换成 Redis 等实现。
 - 通过网页新增的 Provider 凭据同样只保存在当前进程内存中；配置页是本地开发功能，不应直接暴露到公网。
+- 普通聊天能力取决于用户配置的第三方模型；消息和最近有限历史会发送给该服务，费用与数据处理规则以对应服务为准。
+- Agent 当前只有只读天气工具，不具备 Codex 或 Claude Code 的文件、终端、网页浏览和代码执行能力。
+- 工具只支持今天、明天和后天；每轮最多两次工具调用，模型回复最多 4000 字符。
 - 当 `APP_ENV=production` 时，配置页和配置接口直接返回 404；天气凭据必须通过托管平台的环境变量设置。
 - 免费部署使用单 Worker，以保证当前内存会话和限流状态一致；扩容前应迁移到 Redis。
 - 公共 Nominatim 服务限制整个应用每秒最多一次请求；项目会缓存结果并串行调用，适合中低流量演示。高流量部署应通过 `GEOCODING_API_URL` 切换到自托管或商业兼容端点。
@@ -216,6 +263,10 @@ python app.py
 - Flask 反向代理配置：<https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/>
 - Nominatim Search API：<https://nominatim.org/release-docs/latest/api/Search/>
 - Nominatim 公共服务使用策略：<https://operations.osmfoundation.org/policies/nominatim/>
+- OpenAI function calling：<https://developers.openai.com/api/docs/guides/function-calling>
+- DeepSeek tool calls：<https://api-docs.deepseek.com/guides/tool_calls/>
+- OpenRouter tool calling：<https://openrouter.ai/docs/guides/features/tool-calling>
+- Ollama OpenAI compatibility：<https://docs.ollama.com/api/openai-compatibility>
 - Render Flask 部署：<https://render.com/docs/deploy-flask>
 - Render Blueprint：<https://render.com/docs/blueprint-spec>
 - Requests Quickstart：<https://requests.readthedocs.io/en/latest/user/quickstart/>

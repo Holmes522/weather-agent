@@ -18,6 +18,7 @@ Blueprint 会自动设置：
 - Gunicorn 单 Worker、四线程；
 - `/health` 健康检查。
 - Nominatim 动态城市搜索（带缓存、每秒一次串行限速和 OpenStreetMap 署名）。
+- 默认不连接付费 AI 模型，因此未配置模型时仍保持免费天气模式。
 
 构建和启动命令已经写入 `render.yaml`，无需手工填写。
 
@@ -31,6 +32,7 @@ Blueprint 会自动设置：
 2. 输入“北京今天天气怎么样？”可以返回天气；
 3. `https://你的域名/health` 返回 `{"status":"ok"}`；
 4. `https://你的域名/settings` 返回 404，这是生产环境的预期保护。
+5. `https://你的域名/api/llm` 返回 404，模型配置不能从公网修改。
 
 免费实例可能被平台重启，当前多轮会话保存在内存中，因此重启后会清空。
 
@@ -55,7 +57,20 @@ OPENWEATHER_API_KEY=重新生成的API密钥
 
 保存环境变量后 Render 会重新部署。其他已经配置 Key 的 Provider 也会出现在聊天页下拉框中。
 
-## 4. 回滚
+## 4. 可选：开启 AI Agent 模式
+
+在 Render 服务的 **Environment** 页面添加模型环境变量。不要把真实 Key 写入 `render.yaml`：
+
+```text
+LLM_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=你的模型API密钥
+LLM_MODEL=deepseek-v4-flash
+LLM_DISPLAY_NAME=DeepSeek
+```
+
+也可以换成 OpenAI、OpenRouter 或其他支持 Chat Completions 与 tool calling 的 HTTPS 兼容接口。生产服务器不能连接你个人电脑上的 `127.0.0.1` Ollama；若要在公网使用本地模型，需要单独部署模型服务并做好认证与网络隔离。
+
+## 5. 回滚
 
 如果新版本出现问题，在 Render 的 **Deploys** 页面选择上一个成功部署并执行回滚；也可以在 Git 中 revert 对应提交后重新推送。
 
@@ -67,3 +82,4 @@ OPENWEATHER_API_KEY=重新生成的API密钥
 - 限流与多轮会话都在单个进程内存中；
 - 不包含 Redis、数据库、用户登录或管理员后台；
 - 生产环境不能通过网页添加 API Key，只能由站点管理员设置环境变量。
+- AI 模型本身可能收费；免费 Render 只免除应用服务器费用，不包含模型 API 调用费用。
