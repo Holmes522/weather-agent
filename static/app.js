@@ -94,6 +94,32 @@
     scrollToLatest();
   }
 
+  function appendAgentText(answer) {
+    const item = createElement("li", "message message-agent");
+    const bubble = createElement("p", "message-bubble agent-text-bubble", answer);
+    item.appendChild(bubble);
+    chatLog.appendChild(item);
+    scrollToLatest();
+  }
+
+  function appendAgentResponse(payload) {
+    if (payload.display_mode === "text") {
+      appendAgentText(payload.answer);
+      return;
+    }
+
+    const results = Array.isArray(payload.results) && payload.results.length
+      ? payload.results
+      : [payload];
+    results.forEach((result) => {
+      appendWeatherMessage({
+        ...payload,
+        ...result,
+        weather: result.weather || payload.weather,
+      });
+    });
+  }
+
   function appendMetric(list, label, value) {
     const metric = createElement("div", "weather-metric");
     metric.appendChild(createElement("dt", "", label));
@@ -193,7 +219,7 @@
       }
 
       sessionId = payload.session_id || sessionId;
-      appendWeatherMessage(payload);
+      appendAgentResponse(payload);
     } catch (_error) {
       loadingMessage.remove();
       appendError(displayError);

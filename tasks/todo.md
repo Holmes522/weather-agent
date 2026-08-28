@@ -8,6 +8,6 @@
 - [x] Task 6: 安全检查与最终审查；验证：无 `.env`、无真实 Key、全套件通过
 - [x] Task 7: 增加和风天气 Provider；验证：`pytest tests/test_qweather_client.py`
 - [x] Task 8: 支持请求级 Provider 选择；验证：`pytest tests/test_app.py`
-- [ ] Task 9: 多城市提取、动态城市解析和纠错；验证：`pytest tests/test_parser.py tests/test_geocoding.py`
-- [ ] Task 10: 意图化回复和多轮上下文；验证：`pytest tests/test_conversation.py tests/test_app.py`
-- [ ] Task 11: 多城市 API/UI 展示；验证：完整测试与浏览器运行时检查
+- [x] Task 9: 多城市提取、动态城市解析和纠错；验证：`pytest tests/test_parser.py tests/test_geocoding.py`
+- [x] Task 10: 意图化回复和多轮上下文；验证：`pytest tests/test_conversation.py tests/test_app.py`
+- [x] Task 11: 多城市 API/UI 展示；验证：完整测试与浏览器运行时检查

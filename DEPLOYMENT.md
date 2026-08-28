@@ -17,6 +17,7 @@ Blueprint 会自动设置：
 - 每个客户端每分钟最多 30 次聊天请求；
 - Gunicorn 单 Worker、四线程；
 - `/health` 健康检查。
+- Nominatim 动态城市搜索（带缓存、每秒一次串行限速和 OpenStreetMap 署名）。
 
 构建和启动命令已经写入 `render.yaml`，无需手工填写。
 
@@ -62,6 +63,7 @@ OPENWEATHER_API_KEY=重新生成的API密钥
 
 - 仅适合演示、学习和低流量非商业使用；
 - Open-Meteo 免费接口没有可用性保证，并要求显示数据来源；
+- 公共 Nominatim 适合中低流量的用户触发式搜索；流量增加后需将 `GEOCODING_API_URL` 切换到自托管或商业兼容服务；
 - 限流与多轮会话都在单个进程内存中；
 - 不包含 Redis、数据库、用户登录或管理员后台；
 - 生产环境不能通过网页添加 API Key，只能由站点管理员设置环境变量。

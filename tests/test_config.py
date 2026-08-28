@@ -71,6 +71,25 @@ def test_production_settings_are_loaded_from_environment(monkeypatch):
     assert settings.chat_rate_limit_per_minute == 45
 
 
+def test_geocoding_service_can_be_replaced_with_environment(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("GEOCODING_API_URL", "https://geo.example.com/search")
+    monkeypatch.setenv("GEOCODING_USER_AGENT", "weather-agent-test/1.0")
+
+    settings = Settings.from_env()
+
+    assert settings.geocoding_api_url == "https://geo.example.com/search"
+    assert settings.geocoding_user_agent == "weather-agent-test/1.0"
+
+
+def test_geocoding_service_requires_https(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("GEOCODING_API_URL", "http://unsafe.example.com/search")
+
+    with pytest.raises(ConfigurationError):
+        Settings.from_env()
+
+
 @pytest.mark.parametrize("value", ["0", "301", "not-a-number"])
 def test_invalid_chat_rate_limit_is_rejected(monkeypatch, value):
     monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")

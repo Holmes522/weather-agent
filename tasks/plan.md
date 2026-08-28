@@ -62,7 +62,7 @@ parser + session_store + weather_client → /chat
 
 ## Open Questions
 
-- 当前不支持自动地理编码；新增城市需修改 `parser.py` 城市表。
+- 动态地理编码已由 `location-understanding` 模块实现；高流量时需要决定使用自托管还是商业兼容端点。
 - 当前按 `Asia/Shanghai` 作为解析相对日期的默认时区；预报聚合使用城市自身时区。
 
 ## Conversational Weather Upgrade

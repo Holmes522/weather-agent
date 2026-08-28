@@ -80,6 +80,26 @@ def test_reuses_cached_resolution_without_calling_upstream_twice():
     assert call_count == 1
 
 
+def test_cached_city_does_not_reuse_another_query_correction_label():
+    resolver = NominatimCityResolver(
+        request_get=lambda **_kwargs: FakeResponse(
+            city_payload(
+                name="大理市",
+                country_code="cn",
+                latitude="25.59",
+                longitude="100.24",
+            )
+        ),
+        min_interval_seconds=0,
+    )
+
+    corrected = resolver.resolve("大利")
+    direct = resolver.resolve("大理")
+
+    assert corrected.corrected_from == "大利"
+    assert direct.corrected_from is None
+
+
 def test_unknown_city_returns_none_instead_of_previous_session_city():
     resolver = NominatimCityResolver(
         request_get=lambda **_kwargs: FakeResponse([]),

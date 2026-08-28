@@ -21,7 +21,7 @@
 
 html,
 body {
-  min-width: 320px;
+  min-width: 0;
   min-height: 100%;
 }
 
@@ -263,6 +263,10 @@ a:focus-visible {
   color: var(--ink);
   background: #f3f7fa;
   border-bottom-left-radius: 5px;
+}
+
+.agent-text-bubble {
+  white-space: pre-line;
 }
 
 .weather-card {

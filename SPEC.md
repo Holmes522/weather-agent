@@ -1,8 +1,10 @@
 # 天气查询 Agent MVP 规格
 
+> 本文件保留初始 MVP 契约。多城市、动态地理编码、意图化回复和新响应字段由根目录的 `CAPABILITY_MAP.md` 以及三个 `SPEC-*.md` 扩展规格定义。
+
 ## Objective
 
-构建一个 Python 3.9+ Flask REST API，让用户用中文自然语言查询中国主要城市的今天、明天或后天天气。系统用正则表达式识别城市和相对日期，可从 OpenWeatherMap 或和风天气获取数据，并在内存中按 `session_id` 记住上一次查询的城市。
+构建一个 Python 3.9+ Flask REST API，让用户用中文自然语言查询一个或多个全球城市的今天、明天或后天天气。系统用规则识别地点、相对日期和问题意图，动态解析白名单外城市，并在内存中按 `session_id` 记住对话上下文。
 
 ## Tech Stack
 
@@ -92,7 +94,7 @@ weather-agent/
 ## Boundaries
 
 - Always：在 HTTP 边界限制 JSON 消息长度；验证第三方 JSON 字段；API Key 只从环境变量读取；对外部请求设置超时；不把上游错误细节返回给用户。
-- Ask first：扩大城市列表、接入自动地理编码、引入数据库或 LLM、增加认证/限流策略。
+- Ask first：更换地理编码供应商、引入数据库或 LLM、增加认证策略。
 - Never：提交 `.env` 或真实 API Key；把用户输入拼入 URL；将第三方文本直接当作系统指令执行。
 
 ## Success Criteria

@@ -15,3 +15,7 @@ services:
         value: openmeteo
       - key: CHAT_RATE_LIMIT_PER_MINUTE
         value: 30
+      - key: GEOCODING_API_URL
+        value: https://nominatim.openstreetmap.org/search
+      - key: GEOCODING_USER_AGENT
+        value: weather-agent/1.0 (https://github.com/Holmes522/weather-agent)

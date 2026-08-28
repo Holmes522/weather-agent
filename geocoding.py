@@ -94,8 +94,8 @@ class NominatimCityResolver:
         with self._cache_lock:
             if cache_key in self._cache:
                 cached = self._cache[cache_key]
-                if cached is None or corrected_from is None:
-                    return cached
+                if cached is None:
+                    return None
                 return CityResolution(cached.city, corrected_from)
 
         resolution = self._request_resolution(corrected_name, corrected_from)

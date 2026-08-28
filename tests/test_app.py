@@ -325,6 +325,7 @@ def test_home_renders_weather_chat_platform(settings):
     assert '<option value="openweather"' in html
     assert '/static/styles.css' in html
     assert '/static/app.js' in html
+    assert "OpenStreetMap contributors" in html
 
 
 def test_home_offers_openmeteo_without_additional_credentials(settings):
