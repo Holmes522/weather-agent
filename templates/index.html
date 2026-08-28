@@ -19,7 +19,9 @@
         </a>
 
         <div class="topbar-actions">
+          {% if settings_enabled %}
           <a class="settings-link" href="/settings">配置 API</a>
+          {% endif %}
           <span class="service-status">
             <span class="status-dot" aria-hidden="true"></span>
             服务已连接

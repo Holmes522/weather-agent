@@ -57,3 +57,24 @@ def test_common_provider_can_be_selected_from_environment(
 
     assert settings.default_provider == provider
     assert getattr(settings, settings_field) == "provider-key"
+
+
+def test_production_settings_are_loaded_from_environment(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_PER_MINUTE", "45")
+
+    settings = Settings.from_env()
+
+    assert settings.environment == "production"
+    assert settings.is_production is True
+    assert settings.chat_rate_limit_per_minute == 45
+
+
+@pytest.mark.parametrize("value", ["0", "301", "not-a-number"])
+def test_invalid_chat_rate_limit_is_rejected(monkeypatch, value):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_PER_MINUTE", value)
+
+    with pytest.raises(ConfigurationError):
+        Settings.from_env()

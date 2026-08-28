@@ -5,10 +5,12 @@ from threading import RLock
 from typing import Dict, Optional
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import ConfigurationError, Settings
 from parser import parse_query
+from rate_limiter import InMemoryRateLimiter
 from session_store import InMemorySessionStore
 from weather_client import (
     OpenMeteoClient,
@@ -72,9 +74,11 @@ def create_app(
         raise ValueError("weather_client and weather_clients cannot both be provided")
 
     if weather_clients is not None:
+        effective_settings = settings or Settings()
         clients = dict(weather_clients)
         effective_default_provider = default_provider or "openweather"
     elif weather_client is not None:
+        effective_settings = settings or Settings()
         clients = {"openweather": weather_client}
         effective_default_provider = default_provider or "openweather"
     else:
@@ -90,9 +94,15 @@ def create_app(
         )
     store = session_store or InMemorySessionStore()
     clients_lock = RLock()
+    chat_rate_limiter = InMemoryRateLimiter(
+        effective_settings.chat_rate_limit_per_minute
+    )
 
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+    if effective_settings.is_production:
+        # Render 等托管平台位于一层反向代理之后；只在生产模式信任这一层。
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     @app.after_request
     def add_security_headers(response):
@@ -114,6 +124,18 @@ def create_app(
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
+        if effective_settings.is_production:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+    @app.get("/health")
+    def health():
+        """供托管平台探测进程是否已能响应 HTTP 请求。"""
+
+        response = jsonify({"status": "ok"})
+        response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get("/")
@@ -136,10 +158,13 @@ def create_app(
                 for provider_name in ordered_providers
             ],
             default_provider=effective_default_provider,
+            settings_enabled=not effective_settings.is_production,
         )
 
     @app.get("/settings")
     def provider_settings():
+        if effective_settings.is_production:
+            abort(404)
         local_error = _require_local_request()
         if local_error is not None:
             return local_error
@@ -153,6 +178,8 @@ def create_app(
 
     @app.get("/api/providers")
     def provider_status():
+        if effective_settings.is_production:
+            abort(404)
         local_error = _require_local_request()
         if local_error is not None:
             return local_error
@@ -160,6 +187,8 @@ def create_app(
 
     @app.post("/api/providers")
     def configure_provider():
+        if effective_settings.is_production:
+            abort(404)
         local_error = _require_local_request()
         if local_error is not None:
             return local_error
@@ -173,7 +202,7 @@ def create_app(
             client = _build_runtime_provider(
                 provider_name,
                 body,
-                timeout=(settings or Settings()).request_timeout_seconds,
+                timeout=effective_settings.request_timeout_seconds,
             )
         except (TypeError, ValueError):
             return _error_response(
@@ -206,6 +235,17 @@ def create_app(
 
     @app.post("/chat")
     def chat():
+        if effective_settings.is_production:
+            allowed, retry_after = chat_rate_limiter.check(
+                request.remote_addr or "unknown"
+            )
+            if not allowed:
+                response, status_code = _error_response(
+                    "RATE_LIMITED", "请求过于频繁，请稍后重试。", 429
+                )
+                response.headers["Retry-After"] = str(retry_after)
+                return response, status_code
+
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return _error_response("INVALID_JSON", "请求必须是 JSON 对象。", 400)

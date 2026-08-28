@@ -18,10 +18,16 @@ class Settings:
     qweather_api_host: Optional[str] = None
     weatherapi_api_key: Optional[str] = None
     visual_crossing_api_key: Optional[str] = None
+    environment: str = "development"
+    chat_rate_limit_per_minute: int = 30
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
     @classmethod
     def from_env(cls) -> "Settings":
-        default_provider = os.getenv("WEATHER_PROVIDER", "openweather").strip().lower()
+        default_provider = os.getenv("WEATHER_PROVIDER", "openmeteo").strip().lower()
         if default_provider not in {
             "openweather",
             "qweather",
@@ -40,6 +46,22 @@ class Settings:
         visual_crossing_api_key = (
             os.getenv("VISUAL_CROSSING_API_KEY", "").strip() or None
         )
+        environment = os.getenv("APP_ENV", "development").strip().lower()
+        if environment not in {"development", "production"}:
+            raise ConfigurationError("APP_ENV must be development or production")
+
+        try:
+            chat_rate_limit = int(
+                os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "30").strip()
+            )
+        except ValueError as error:
+            raise ConfigurationError(
+                "CHAT_RATE_LIMIT_PER_MINUTE must be an integer"
+            ) from error
+        if not 1 <= chat_rate_limit <= 300:
+            raise ConfigurationError(
+                "CHAT_RATE_LIMIT_PER_MINUTE must be between 1 and 300"
+            )
 
         if default_provider == "openweather" and not openweather_api_key:
             raise ConfigurationError(
@@ -67,4 +89,6 @@ class Settings:
             qweather_api_host=qweather_api_host,
             weatherapi_api_key=weatherapi_api_key,
             visual_crossing_api_key=visual_crossing_api_key,
+            environment=environment,
+            chat_rate_limit_per_minute=chat_rate_limit,
         )
