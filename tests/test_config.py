@@ -21,3 +21,16 @@ def test_unknown_default_provider_is_rejected(monkeypatch):
 
     with pytest.raises(ConfigurationError):
         Settings.from_env()
+
+
+def test_openmeteo_can_be_default_without_api_key(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
+    monkeypatch.delenv("QWEATHER_API_KEY", raising=False)
+    monkeypatch.delenv("QWEATHER_API_HOST", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.default_provider == "openmeteo"
+    assert settings.api_key is None
+    assert settings.qweather_api_key is None

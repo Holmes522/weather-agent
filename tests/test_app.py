@@ -188,6 +188,17 @@ def test_home_renders_weather_chat_platform(settings):
     assert '/static/app.js' in html
 
 
+def test_home_offers_openmeteo_without_additional_credentials(settings):
+    app = create_app(settings=settings)
+
+    response = app.test_client().get("/")
+
+    assert response.status_code == 200
+    assert '<option value="openmeteo">Open-Meteo</option>' in response.get_data(
+        as_text=True
+    )
+
+
 @pytest.mark.parametrize("path", ["/", "/chat"])
 def test_responses_include_browser_security_headers(settings, path):
     app = create_app(settings=settings, weather_client=FakeWeatherClient())

@@ -125,7 +125,12 @@
   }
 
   function providerName(provider) {
-    return provider === "qweather" ? "和风天气" : "OpenWeather";
+    const names = {
+      qweather: "和风天气",
+      openweather: "OpenWeather",
+      openmeteo: "Open-Meteo",
+    };
+    return names[provider] || provider;
   }
 
   function formatNumber(value) {

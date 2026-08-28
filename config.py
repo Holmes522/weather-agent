@@ -20,9 +20,9 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         default_provider = os.getenv("WEATHER_PROVIDER", "openweather").strip().lower()
-        if default_provider not in {"openweather", "qweather"}:
+        if default_provider not in {"openweather", "qweather", "openmeteo"}:
             raise ConfigurationError(
-                "WEATHER_PROVIDER must be openweather or qweather"
+                "WEATHER_PROVIDER must be openweather, qweather or openmeteo"
             )
 
         openweather_api_key = os.getenv("OPENWEATHER_API_KEY", "").strip() or None

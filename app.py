@@ -10,6 +10,7 @@ from config import ConfigurationError, Settings
 from parser import parse_query
 from session_store import InMemorySessionStore
 from weather_client import (
+    OpenMeteoClient,
     OpenWeatherClient,
     QWeatherClient,
     WeatherClientError,
@@ -85,6 +86,7 @@ def create_app(
         provider_labels = {
             "qweather": "和风天气",
             "openweather": "OpenWeather",
+            "openmeteo": "Open-Meteo",
         }
         ordered_providers = sorted(
             clients,
@@ -179,7 +181,9 @@ def create_app(
 
 
 def _build_weather_clients(settings: Settings) -> Dict[str, WeatherProvider]:
-    clients: Dict[str, WeatherProvider] = {}
+    clients: Dict[str, WeatherProvider] = {
+        "openmeteo": OpenMeteoClient(timeout=settings.request_timeout_seconds)
+    }
     if settings.api_key:
         clients["openweather"] = OpenWeatherClient(
             settings.api_key,

@@ -46,7 +46,10 @@ class WeatherProvider(Protocol):
 
 
 class OpenMeteoClient:
-    """无需 API Key 的 Open-Meteo 全球预报客户端。"""
+    """无需 API Key 的 Open-Meteo 全球预报客户端。
+
+    官方字段与单位契约：https://open-meteo.com/en/docs
+    """
 
     BASE_URL = "https://api.open-meteo.com/v1/forecast"
     DEFAULT_TIMEOUT: Tuple[float, float] = (3.05, 10.0)
