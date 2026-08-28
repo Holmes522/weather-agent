@@ -82,9 +82,17 @@ def test_geocoding_service_can_be_replaced_with_environment(monkeypatch):
     assert settings.geocoding_user_agent == "weather-agent-test/1.0"
 
 
-def test_geocoding_service_requires_https(monkeypatch):
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://unsafe.example.com/search",
+        "https://",
+        "https://user:password@geo.example.com/search",
+    ],
+)
+def test_geocoding_service_requires_safe_https_url(monkeypatch, url):
     monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
-    monkeypatch.setenv("GEOCODING_API_URL", "http://unsafe.example.com/search")
+    monkeypatch.setenv("GEOCODING_API_URL", url)
 
     with pytest.raises(ConfigurationError):
         Settings.from_env()

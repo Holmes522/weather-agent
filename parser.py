@@ -51,12 +51,14 @@ _LOCATION_END_PATTERN = re.compile(
     r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|有雨|"
     r"出门|带伞|雨伞|带什么|穿什么|穿衣"
 )
-_LOCATION_SEPARATOR_PATTERN = re.compile(r"(?:和|与|及|、|，|,|/|；|;)" )
+_LOCATION_SEPARATOR_PATTERN = re.compile(r"(?:和|与|及|、|，|,|/|；|;)")
 _LEADING_FILLER_PATTERN = re.compile(
     r"^(?:请问|麻烦|帮我|替我|给我|我想知道|我想问|想知道|"
     r"查询|查一下|查查|看看|比较一下|比较|那|我在|在)+"
 )
-_TRAILING_FILLER_PATTERN = re.compile(r"(?:会不会|是否|会|可能|的|呢|吗|如何|怎么样|什么样)+$")
+_TRAILING_FILLER_PATTERN = re.compile(
+    r"(?:会不会|是否|会|可能|的|呢|吗|如何|怎么样|什么样)+$"
+)
 _VALID_LOCATION_PATTERN = re.compile(r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40}$")
 _CONTEXT_ONLY_PATTERN = re.compile(
     r"^(?:需要|要|可以|好|好的|行|告诉我|请告诉我|看看|想看)[。！!？?]*$"

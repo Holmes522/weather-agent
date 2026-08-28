@@ -18,7 +18,12 @@ class FakeResponse:
         return self.payload
 
 
-def city_payload(name="纽约", country_code="us", latitude="40.7127", longitude="-74.0060"):
+def city_payload(
+    name="纽约",
+    country_code="us",
+    latitude="40.7127",
+    longitude="-74.0060",
+):
     return [
         {
             "name": name,
@@ -49,6 +54,7 @@ def test_resolves_any_city_with_nominatim_and_validates_coordinates():
     assert calls[0]["params"]["q"] == "纽约"
     assert calls[0]["params"]["featureType"] == "settlement"
     assert "weather-agent" in calls[0]["headers"]["User-Agent"]
+    assert calls[0]["allow_redirects"] is False
 
 
 def test_corrects_confirmed_alias_before_geocoding():
@@ -56,7 +62,14 @@ def test_corrects_confirmed_alias_before_geocoding():
 
     def fake_get(**kwargs):
         queries.append(kwargs["params"]["q"])
-        return FakeResponse(city_payload(name="大理市", country_code="cn", latitude="25.59", longitude="100.24"))
+        return FakeResponse(
+            city_payload(
+                name="大理市",
+                country_code="cn",
+                latitude="25.59",
+                longitude="100.24",
+            )
+        )
 
     resolver = NominatimCityResolver(request_get=fake_get, min_interval_seconds=0)
     resolution = resolver.resolve("大利")
@@ -109,7 +122,31 @@ def test_unknown_city_returns_none_instead_of_previous_session_city():
     assert resolver.resolve("不存在城") is None
 
 
-@pytest.mark.parametrize("payload", [{}, [{"name": "坏数据", "lat": "nan", "lon": "x"}]])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        [{"name": "坏数据", "lat": "nan", "lon": "x"}],
+        [
+            {
+                "name": "不是城市",
+                "lat": "39.9",
+                "lon": "116.4",
+                "addresstype": "house",
+                "address": {"country_code": "cn"},
+            }
+        ],
+        [
+            {
+                "name": "坏国家码",
+                "lat": "39.9",
+                "lon": "116.4",
+                "addresstype": "city",
+                "address": {"country_code": "c$"},
+            }
+        ],
+    ],
+)
 def test_rejects_invalid_geocoding_payload(payload):
     resolver = NominatimCityResolver(
         request_get=lambda **_kwargs: FakeResponse(payload),

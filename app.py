@@ -16,9 +16,13 @@ from conversation import (
     OUTING,
     build_weather_answer,
     classify_intent,
-    is_full_weather_confirmation,
 )
-from geocoding import CityResolution, CityResolver, GeocodingError, NominatimCityResolver
+from geocoding import (
+    CityResolution,
+    CityResolver,
+    GeocodingError,
+    NominatimCityResolver,
+)
 from parser import SUPPORTED_CITIES, parse_query
 from rate_limiter import InMemoryRateLimiter
 from session_store import ConversationContext, InMemorySessionStore
@@ -295,11 +299,6 @@ def create_app(
 
         parsed = parse_query(message)
         previous_context = store.get_context(session_id)
-        confirmation = bool(
-            previous_context
-            and previous_context.offered_full_weather
-            and is_full_weather_confirmation(message)
-        )
         intent = classify_intent(
             message,
             has_full_weather_offer=bool(
@@ -346,9 +345,6 @@ def create_app(
         else:
             day_offset = parsed.day_offset
             date_label = parsed.date_label
-
-        if confirmation:
-            intent = FULL
 
         try:
             weather_results = []

@@ -47,6 +47,12 @@ def test_extracts_misspelled_city_as_location_term_for_resolution():
     assert result.location_terms == ("大利",)
 
 
+def test_limits_a_single_message_to_five_cities():
+    result = parse_query("北京、上海、广州、深圳、成都、杭州明天天气")
+
+    assert result.location_terms == ("北京", "上海", "广州", "深圳", "成都")
+
+
 def test_missing_date_defaults_to_today():
     result = parse_query("上海天气")
 

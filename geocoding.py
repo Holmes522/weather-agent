@@ -5,6 +5,7 @@ from math import isfinite
 from threading import Lock
 from time import monotonic, sleep
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
+from urllib.parse import urlparse
 
 import requests
 
@@ -60,7 +61,13 @@ class NominatimCityResolver:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ):
-        if not base_url.startswith("https://"):
+        parsed_base_url = urlparse(base_url)
+        if (
+            parsed_base_url.scheme != "https"
+            or not parsed_base_url.hostname
+            or parsed_base_url.username
+            or parsed_base_url.password
+        ):
             raise ValueError("geocoding base URL must use HTTPS")
         if not user_agent.strip() or min_interval_seconds < 0 or max_cache_size < 1:
             raise ValueError("invalid geocoding configuration")
@@ -127,6 +134,7 @@ class NominatimCityResolver:
                     },
                     headers={"User-Agent": self._user_agent},
                     timeout=self._timeout,
+                    allow_redirects=False,
                 )
                 response.raise_for_status()
                 payload = response.json()
@@ -171,11 +179,20 @@ class NominatimCityResolver:
             ):
                 continue
             address = item.get("address")
-            country_code = address.get("country_code") if isinstance(address, dict) else None
-            if not isinstance(country_code, str) or len(country_code) != 2:
+            country_code = (
+                address.get("country_code") if isinstance(address, dict) else None
+            )
+            if (
+                not isinstance(country_code, str)
+                or len(country_code) != 2
+                or not country_code.isascii()
+                or not country_code.isalpha()
+            ):
                 continue
             address_type = item.get("addresstype")
-            priority = self._TYPE_PRIORITY.get(address_type, 20)
+            if address_type not in self._TYPE_PRIORITY:
+                continue
+            priority = self._TYPE_PRIORITY[address_type]
             candidates.append(
                 (priority, -importance, latitude, longitude, country_code.upper())
             )

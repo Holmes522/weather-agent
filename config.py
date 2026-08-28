@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
 
 class ConfigurationError(Exception):
@@ -59,8 +60,17 @@ class Settings:
         geocoding_user_agent = os.getenv(
             "GEOCODING_USER_AGENT", cls.geocoding_user_agent
         ).strip()
-        if not geocoding_api_url.startswith("https://") or not geocoding_user_agent:
-            raise ConfigurationError("GEOCODING_API_URL and GEOCODING_USER_AGENT are invalid")
+        parsed_geocoding_url = urlparse(geocoding_api_url)
+        if (
+            parsed_geocoding_url.scheme != "https"
+            or not parsed_geocoding_url.hostname
+            or parsed_geocoding_url.username
+            or parsed_geocoding_url.password
+            or not geocoding_user_agent
+        ):
+            raise ConfigurationError(
+                "GEOCODING_API_URL and GEOCODING_USER_AGENT are invalid"
+            )
 
         try:
             chat_rate_limit = int(
