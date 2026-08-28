@@ -65,6 +65,17 @@ parser + session_store + weather_client → /chat
 - 动态地理编码已由 `location-understanding` 模块实现；高流量时需要决定使用自托管还是商业兼容端点。
 - 当前按 `Asia/Shanghai` 作为解析相对日期的默认时区；预报聚合使用城市自身时区。
 
+## AI Agent Upgrade
+
+1. 定义 OpenAI 兼容模型客户端和稳定的模型响应类型。
+2. 定义只读 `get_weather` 工具、参数验证和最多两次工具调用的编排循环。
+3. 在 `/chat` 中启用 Agent 路径，并保留无模型时的规则天气路径。
+4. 增加开发环境模型配置接口与配置页面，生产环境仅使用环境变量。
+5. 扩展内存会话为有上限的普通聊天历史，并保持天气上下文兼容。
+6. 完成 API、浏览器、安全与回归验证后分阶段提交。
+
+风险与缓解：模型输出不可信，因此工具名称和参数由代码白名单验证；模型服务可能超时或产生费用，因此设置超时、输出上限、历史上限、工具轮次上限和生产限流；自定义端点只允许 HTTPS，只有 loopback Ollama 可使用 HTTP。
+
 ## Conversational Weather Upgrade
 
 1. `location-understanding`：多城市解析 → 动态地理编码 → 纠错与缓存。
