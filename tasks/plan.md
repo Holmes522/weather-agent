@@ -65,6 +65,14 @@ parser + session_store + weather_client → /chat
 - 当前不支持自动地理编码；新增城市需修改 `parser.py` 城市表。
 - 当前按 `Asia/Shanghai` 作为解析相对日期的默认时区；预报聚合使用城市自身时区。
 
+## Conversational Weather Upgrade
+
+1. `location-understanding`：多城市解析 → 动态地理编码 → 纠错与缓存。
+2. `conversational-intent`：意图分类 → 按需回复 → 多轮确认。
+3. `chat-presentation`：兼容 JSON 扩展 → 多卡片/文本气泡展示。
+
+风险与缓解：公共 Nominatim 受每秒一次限制，因此只对本地白名单外地点调用，使用进程内缓存和串行限速；后续可通过环境变量切换到自托管或商业兼容端点。
+
 ## Multi-provider Extension
 
 - [x] 定义统一 `WeatherProvider` 接口并保持现有 OpenWeather 客户端兼容。

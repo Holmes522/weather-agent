@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -38,22 +38,71 @@ class ParsedQuery:
     city: Optional[City]
     day_offset: int
     date_label: str
+    location_terms: Tuple[str, ...] = ()
 
 
 _TIME_PATTERNS = (("后天", 2), ("明天", 1), ("今天", 0))
 _CITY_PATTERN = re.compile(
     "|".join(re.escape(city_name) for city_name in sorted(SUPPORTED_CITIES, key=len, reverse=True))
 )
+_DATE_PATTERN = re.compile("|".join(label for label, _offset in _TIME_PATTERNS))
+_LOCATION_END_PATTERN = re.compile(
+    r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|有雨|"
+    r"出门|带伞|雨伞|带什么|穿什么|穿衣"
+)
+_LOCATION_SEPARATOR_PATTERN = re.compile(r"(?:和|与|及|、|，|,|/|；|;)" )
+_LEADING_FILLER_PATTERN = re.compile(
+    r"^(?:请问|麻烦|帮我|替我|给我|我想知道|我想问|想知道|"
+    r"查询|查一下|查查|看看|比较一下|比较|那|我在|在)+"
+)
+_TRAILING_FILLER_PATTERN = re.compile(r"(?:会不会|是否|会|可能|的|呢|吗|如何|怎么样|什么样)+$")
+_VALID_LOCATION_PATTERN = re.compile(r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40}$")
 
 
 def parse_query(message: str) -> ParsedQuery:
-    """从中文消息中提取城市和相对日期；未写日期时默认今天。"""
+    """从中文消息中提取一个或多个地点和相对日期。"""
 
-    city_match = _CITY_PATTERN.search(message)
-    city = SUPPORTED_CITIES.get(city_match.group(0)) if city_match else None
+    location_terms = _extract_location_terms(message)
+    city = next(
+        (SUPPORTED_CITIES[term] for term in location_terms if term in SUPPORTED_CITIES),
+        None,
+    )
 
     for date_label, day_offset in _TIME_PATTERNS:
         if date_label in message:
-            return ParsedQuery(city, day_offset, date_label)
+            return ParsedQuery(city, day_offset, date_label, location_terms)
 
-    return ParsedQuery(city, 0, "今天")
+    return ParsedQuery(city, 0, "今天", location_terms)
+
+
+def _extract_location_terms(message: str) -> Tuple[str, ...]:
+    """提取天气问题中的地点片段；地点是否合法由地理编码边界确认。"""
+
+    text = _DATE_PATTERN.sub("", message.strip())
+    text = re.sub(r"(?:会不会|是否|可能会|会)", "", text)
+    end_match = _LOCATION_END_PATTERN.search(text)
+    candidate_text = text[: end_match.start()] if end_match else text
+    candidate_text = candidate_text.strip(" \t\r\n？?！!。.")
+    candidate_text = _LEADING_FILLER_PATTERN.sub("", candidate_text)
+    candidate_text = _TRAILING_FILLER_PATTERN.sub("", candidate_text)
+
+    terms = []
+    for raw_term in _LOCATION_SEPARATOR_PATTERN.split(candidate_text):
+        term = raw_term.strip(" \t\r\n？?！!。.的")
+        term = _LEADING_FILLER_PATTERN.sub("", term)
+        term = _TRAILING_FILLER_PATTERN.sub("", term)
+        if term.endswith("市") and term[:-1] in SUPPORTED_CITIES:
+            term = term[:-1]
+        if not term or not _VALID_LOCATION_PATTERN.fullmatch(term):
+            continue
+        if term not in terms:
+            terms.append(term)
+        if len(terms) == 5:
+            break
+
+    if terms:
+        return tuple(terms)
+
+    # 兼容措辞较复杂但仍包含白名单城市的旧查询。
+    known_matches = [match.group(0) for match in _CITY_PATTERN.finditer(message)]
+    return tuple(dict.fromkeys(known_matches[:5]))
