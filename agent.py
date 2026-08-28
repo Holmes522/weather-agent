@@ -34,6 +34,14 @@ class AgentRunResult:
 
 
 class ChatModel(Protocol):
+    @property
+    def model(self) -> str:
+        ...
+
+    @property
+    def display_name(self) -> str:
+        ...
+
     def complete(
         self,
         messages: Sequence[Dict[str, Any]],

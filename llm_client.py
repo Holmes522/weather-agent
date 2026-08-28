@@ -162,9 +162,12 @@ def _model_endpoint(base_url: object) -> Tuple[str, bool]:
     parsed = urlparse(normalized)
     hostname = parsed.hostname.lower() if parsed.hostname else ""
     is_loopback = hostname == "localhost"
+    unsafe_ip_literal = False
     try:
-        if hostname and ipaddress.ip_address(hostname).is_loopback:
-            is_loopback = True
+        if hostname:
+            parsed_ip = ipaddress.ip_address(hostname)
+            is_loopback = parsed_ip.is_loopback
+            unsafe_ip_literal = not parsed_ip.is_global and not parsed_ip.is_loopback
     except ValueError:
         pass
 
@@ -177,6 +180,7 @@ def _model_endpoint(base_url: object) -> Tuple[str, bool]:
         or parsed.params
         or parsed.scheme not in {"http", "https"}
         or (parsed.scheme == "http" and not is_loopback)
+        or unsafe_ip_literal
     ):
         raise ValueError("model base URL is unsafe")
 

@@ -153,6 +153,8 @@ def test_network_and_http_details_are_hidden_behind_upstream_error():
         "http://api.example.com/v1",
         "https://user:password@api.example.com/v1",
         "https://api.example.com/v1?token=secret",
+        "https://169.254.169.254/v1",
+        "https://10.0.0.1/v1",
         "ftp://api.example.com/v1",
     ],
 )
