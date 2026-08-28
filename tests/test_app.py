@@ -120,3 +120,46 @@ def test_chat_rejects_oversized_message(settings):
 
     assert response.status_code == 422
     assert response.get_json()["error"]["code"] == "MESSAGE_TOO_LONG"
+
+
+def test_chat_selects_qweather_provider_per_request(settings):
+    openweather = FakeWeatherClient(current=WeatherData(22.0, "晴", 40, 2.0, False))
+    qweather = FakeWeatherClient(current=WeatherData(18.0, "阴", 70, 1.0, False))
+    app = create_app(
+        settings=settings,
+        weather_clients={"openweather": openweather, "qweather": qweather},
+        default_provider="openweather",
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={
+            "message": "北京今天天气怎么样？",
+            "session_id": "provider-session",
+            "provider": "qweather",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["provider"] == "qweather"
+    assert response.get_json()["weather"]["temperature_c"] == 18.0
+    assert qweather.calls == [("current", "北京", 0)]
+    assert openweather.calls == []
+
+
+def test_chat_rejects_unknown_provider(settings):
+    app = create_app(
+        settings=settings,
+        weather_clients={"openweather": FakeWeatherClient()},
+        default_provider="openweather",
+    )
+
+    response = app.test_client().post(
+        "/chat", json={"message": "北京天气", "provider": "unknown"}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == {
+        "code": "INVALID_PROVIDER",
+        "message": "不支持该天气服务，可选值：openweather。",
+    }

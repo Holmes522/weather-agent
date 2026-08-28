@@ -1,11 +1,13 @@
 # Weather Query Agent MVP
 
-一个规则驱动的中文天气查询 Agent MVP。它提供 `POST /chat`，识别城市和“今天/明天/后天”，调用 OpenWeatherMap，并用内存字典保存同一 `session_id` 的上一次城市。
+一个规则驱动的中文天气查询 Agent MVP。它提供 `POST /chat`，识别城市和“今天/明天/后天”，可选择 OpenWeatherMap 或和风天气，并用内存字典保存同一 `session_id` 的上一次城市。
 
 ## 功能
 
 - 支持示例：`北京今天天气怎么样？`、`上海明天会下雨吗？`
 - 支持同一会话追问：`那后天呢？`
+- 支持天气 Provider：`openweather`、`qweather`。
+- 可通过环境变量设置默认 Provider，也可在单次请求中选择。
 - 返回摄氏温度、天气状况、湿度、风速、是否预期下雨，以及明天的简单建议。
 - 当前内置城市：北京、上海、广州、深圳、成都、杭州、南京、武汉、西安、重庆、天津、香港、澳门。
 
@@ -27,13 +29,15 @@
 │   └── todo.md
 └── tests/
     ├── test_app.py
+    ├── test_config.py
     ├── test_parser.py
+    ├── test_qweather_client.py
     └── test_weather_client.py
 ```
 
 ## 安装与运行
 
-需要 Python 3.9 或更高版本，以及一个 OpenWeatherMap API Key。
+需要 Python 3.9 或更高版本。使用和风天气时，需要在和风天气控制台创建 API Key，并复制控制台分配的专属 API Host。
 
 ### Windows PowerShell
 
@@ -41,7 +45,9 @@
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:OPENWEATHER_API_KEY = "你的 OpenWeatherMap API Key"
+$env:WEATHER_PROVIDER = "qweather"
+$env:QWEATHER_API_KEY = "你的和风天气 API Key"
+$env:QWEATHER_API_HOST = "控制台中的专属主机名.qweatherapi.com"
 python app.py
 ```
 
@@ -51,7 +57,9 @@ python app.py
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-export OPENWEATHER_API_KEY="你的 OpenWeatherMap API Key"
+export WEATHER_PROVIDER="qweather"
+export QWEATHER_API_KEY="你的和风天气 API Key"
+export QWEATHER_API_HOST="控制台中的专属主机名.qweatherapi.com"
 python app.py
 ```
 
@@ -59,7 +67,7 @@ python app.py
 
 ## 测试
 
-测试不会访问真实 OpenWeatherMap，而是对上游响应使用可控的测试替身：
+测试不会访问真实天气服务，而是对两个 Provider 的上游响应使用可控的测试替身：
 
 ```bash
 python -m pytest -q
@@ -72,7 +80,7 @@ python -m pytest -q
 ```bash
 curl -X POST http://127.0.0.1:5000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"上海明天会下雨吗？","session_id":"demo-1"}'
+  -d '{"message":"上海明天会下雨吗？","session_id":"demo-1","provider":"qweather"}'
 
 curl -X POST http://127.0.0.1:5000/chat \
   -H "Content-Type: application/json" \
@@ -81,6 +89,18 @@ curl -X POST http://127.0.0.1:5000/chat \
 
 如果不传 `session_id`，服务会生成一个随机会话 ID，并在成功响应中返回；客户端需要保存它以便继续多轮对话。
 
+`provider` 也是可选字段：未传时使用 `WEATHER_PROVIDER`，可选值为 `openweather` 或 `qweather`。只有配置了对应凭据的 Provider 才能被选择。
+
+如果需要同时启用两个 Provider：
+
+```powershell
+$env:WEATHER_PROVIDER = "qweather"
+$env:QWEATHER_API_KEY = "你的和风天气 API Key"
+$env:QWEATHER_API_HOST = "控制台中的专属主机名.qweatherapi.com"
+$env:OPENWEATHER_API_KEY = "你的 OpenWeatherMap API Key"
+python app.py
+```
+
 ## 响应示例
 
 ```json
@@ -88,6 +108,7 @@ curl -X POST http://127.0.0.1:5000/chat \
   "session_id": "demo-1",
   "city": "上海",
   "date": "明天",
+  "provider": "qweather",
   "answer": "上海明天：雨，气温约 25.0℃，湿度 80%，风速 2.0 m/s。明天可能有雨，建议携带雨具。",
   "weather": {
     "temperature_c": 25.0,
@@ -104,11 +125,15 @@ curl -X POST http://127.0.0.1:5000/chat \
 
 - 会话状态只在当前 Python 进程内存中；重启服务或使用多进程部署后不会共享。生产化时可把 `InMemorySessionStore` 替换成 Redis 等实现。
 - 城市使用白名单坐标，不接入自动地理编码；增加城市需修改 `parser.py`。
-- “明天/后天”的预报依赖 5 Day / 3 Hour Forecast API 的 3 小时条目；服务按 OpenWeatherMap 返回的城市时区聚合目标日期。
+- OpenWeatherMap 的“明天/后天”按 3 小时预报聚合；和风天气使用每日预报中的目标日期条目。
+- 和风天气 API Host 必须是控制台分配的 `*.qweatherapi.com` 主机名，不能包含 `https://` 或路径。
 
 ## 官方接口依据
 
 - OpenWeatherMap Current Weather API：<https://openweathermap.org/api/current>
 - OpenWeatherMap 5 Day / 3 Hour Forecast API：<https://openweathermap.org/api/forecast5>
+- 和风天气实时天气 v1：<https://dev.qweather.com/docs/api/weather/weather-current/>
+- 和风天气每日预报 v1：<https://dev.qweather.com/docs/api/weather/weather-daily-forecast/>
+- 和风天气认证与 API Host：<https://dev.qweather.com/docs/configuration/authentication/>、<https://dev.qweather.com/docs/configuration/api-host/>
 - Flask Quickstart：<https://flask.palletsprojects.com/en/stable/quickstart/>
 - Requests Quickstart：<https://requests.readthedocs.io/en/latest/user/quickstart/>

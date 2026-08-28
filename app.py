@@ -1,7 +1,7 @@
 """天气查询 Agent 的 Flask REST API。"""
 
 import re
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
@@ -9,7 +9,13 @@ from flask import Flask, jsonify, request
 from config import ConfigurationError, Settings
 from parser import parse_query
 from session_store import InMemorySessionStore
-from weather_client import OpenWeatherClient, WeatherClientError, WeatherData
+from weather_client import (
+    OpenWeatherClient,
+    QWeatherClient,
+    WeatherClientError,
+    WeatherData,
+    WeatherProvider,
+)
 
 
 MAX_MESSAGE_LENGTH = 200
@@ -18,16 +24,32 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
 def create_app(
     settings: Optional[Settings] = None,
-    weather_client: Optional[OpenWeatherClient] = None,
+    weather_client: Optional[WeatherProvider] = None,
     session_store: Optional[InMemorySessionStore] = None,
+    weather_clients: Optional[Dict[str, WeatherProvider]] = None,
+    default_provider: Optional[str] = None,
 ) -> Flask:
     """创建 Flask 应用；依赖可注入，便于脱离真实网络测试。"""
 
-    if weather_client is None:
+    if weather_client is not None and weather_clients is not None:
+        raise ValueError("weather_client and weather_clients cannot both be provided")
+
+    if weather_clients is not None:
+        clients = dict(weather_clients)
+        effective_default_provider = default_provider or "openweather"
+    elif weather_client is not None:
+        clients = {"openweather": weather_client}
+        effective_default_provider = default_provider or "openweather"
+    else:
         effective_settings = settings or Settings.from_env()
-        weather_client = OpenWeatherClient(
-            effective_settings.api_key,
-            timeout=effective_settings.request_timeout_seconds,
+        clients = _build_weather_clients(effective_settings)
+        effective_default_provider = (
+            default_provider or effective_settings.default_provider
+        )
+
+    if effective_default_provider not in clients:
+        raise ConfigurationError(
+            f"Default weather provider is not configured: {effective_default_provider}"
         )
     store = session_store or InMemorySessionStore()
 
@@ -55,6 +77,14 @@ def create_app(
         if len(message) > MAX_MESSAGE_LENGTH:
             return _error_response("MESSAGE_TOO_LONG", "问题长度不能超过 200 个字符。", 422)
 
+        provider = body.get("provider", effective_default_provider)
+        if not isinstance(provider, str) or provider not in clients:
+            available = "、".join(sorted(clients))
+            return _error_response(
+                "INVALID_PROVIDER", f"不支持该天气服务，可选值：{available}。", 422
+            )
+        selected_client = clients[provider]
+
         session_id = body.get("session_id")
         if session_id is None:
             session_id = uuid4().hex
@@ -70,9 +100,9 @@ def create_app(
 
         try:
             if parsed.day_offset == 0:
-                weather = weather_client.get_current(city)
+                weather = selected_client.get_current(city)
             else:
-                weather = weather_client.get_forecast(city, parsed.day_offset)
+                weather = selected_client.get_forecast(city, parsed.day_offset)
         except WeatherClientError:
             return _error_response(
                 "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
@@ -86,6 +116,7 @@ def create_app(
                 "session_id": session_id,
                 "city": city.name,
                 "date": parsed.date_label,
+                "provider": provider,
                 "answer": _build_answer(city.name, parsed.date_label, weather, advice),
                 "weather": {
                     "temperature_c": weather.temperature_c,
@@ -99,6 +130,22 @@ def create_app(
         )
 
     return app
+
+
+def _build_weather_clients(settings: Settings) -> Dict[str, WeatherProvider]:
+    clients: Dict[str, WeatherProvider] = {}
+    if settings.api_key:
+        clients["openweather"] = OpenWeatherClient(
+            settings.api_key,
+            timeout=settings.request_timeout_seconds,
+        )
+    if settings.qweather_api_key and settings.qweather_api_host:
+        clients["qweather"] = QWeatherClient(
+            settings.qweather_api_key,
+            settings.qweather_api_host,
+            timeout=settings.request_timeout_seconds,
+        )
+    return clients
 
 
 def _error_response(code: str, message: str, status_code: int):
@@ -122,5 +169,5 @@ def _build_answer(city: str, date_label: str, weather: WeatherData, advice: Opti
 
 
 if __name__ == "__main__":
-    # 开发启动方式：先设置 OPENWEATHER_API_KEY，再执行 python app.py。
+    # 先设置 WEATHER_PROVIDER 及对应凭据，再执行 python app.py。
     create_app().run(host="127.0.0.1", port=5000, debug=False)

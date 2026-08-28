@@ -64,3 +64,10 @@ parser + session_store + weather_client → /chat
 
 - 当前不支持自动地理编码；新增城市需修改 `parser.py` 城市表。
 - 当前按 `Asia/Shanghai` 作为解析相对日期的默认时区；预报聚合使用城市自身时区。
+
+## Multi-provider Extension
+
+- [x] 定义统一 `WeatherProvider` 接口并保持现有 OpenWeather 客户端兼容。
+- [x] 增加和风天气 v1 实时天气和每日预报客户端。
+- [x] 允许通过 `WEATHER_PROVIDER` 或请求 `provider` 选择服务。
+- [x] 验证 API Host 白名单、第三方响应字段和统一错误语义。

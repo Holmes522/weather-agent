@@ -7,7 +7,7 @@ from typing import Dict, Optional
 
 @dataclass(frozen=True)
 class City:
-    """允许查询的城市及其 OpenWeatherMap 坐标。"""
+    """允许查询的城市及各天气 Provider 共用的经纬度。"""
 
     name: str
     latitude: float

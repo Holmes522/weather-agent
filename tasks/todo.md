@@ -6,3 +6,5 @@
 - [x] Task 4: 端到端 mock API 流程；验证：`pytest`
 - [x] Task 5: 文档与环境模板；验证：按 README curl 示例检查
 - [x] Task 6: 安全检查与最终审查；验证：无 `.env`、无真实 Key、全套件通过
+- [x] Task 7: 增加和风天气 Provider；验证：`pytest tests/test_qweather_client.py`
+- [x] Task 8: 支持请求级 Provider 选择；验证：`pytest tests/test_app.py`
