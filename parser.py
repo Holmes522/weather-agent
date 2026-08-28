@@ -39,6 +39,7 @@ class ParsedQuery:
     day_offset: int
     date_label: str
     location_terms: Tuple[str, ...] = ()
+    date_is_explicit: bool = False
 
 
 _TIME_PATTERNS = (("后天", 2), ("明天", 1), ("今天", 0))
@@ -57,6 +58,9 @@ _LEADING_FILLER_PATTERN = re.compile(
 )
 _TRAILING_FILLER_PATTERN = re.compile(r"(?:会不会|是否|会|可能|的|呢|吗|如何|怎么样|什么样)+$")
 _VALID_LOCATION_PATTERN = re.compile(r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40}$")
+_CONTEXT_ONLY_PATTERN = re.compile(
+    r"^(?:需要|要|可以|好|好的|行|告诉我|请告诉我|看看|想看)[。！!？?]*$"
+)
 
 
 def parse_query(message: str) -> ParsedQuery:
@@ -70,14 +74,16 @@ def parse_query(message: str) -> ParsedQuery:
 
     for date_label, day_offset in _TIME_PATTERNS:
         if date_label in message:
-            return ParsedQuery(city, day_offset, date_label, location_terms)
+            return ParsedQuery(city, day_offset, date_label, location_terms, True)
 
-    return ParsedQuery(city, 0, "今天", location_terms)
+    return ParsedQuery(city, 0, "今天", location_terms, False)
 
 
 def _extract_location_terms(message: str) -> Tuple[str, ...]:
     """提取天气问题中的地点片段；地点是否合法由地理编码边界确认。"""
 
+    if _CONTEXT_ONLY_PATTERN.fullmatch(message.strip()):
+        return ()
     text = _DATE_PATTERN.sub("", message.strip())
     text = re.sub(r"(?:会不会|是否|可能会|会)", "", text)
     end_match = _LOCATION_END_PATTERN.search(text)

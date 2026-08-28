@@ -9,9 +9,19 @@ from flask import Flask, abort, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import ConfigurationError, Settings
-from parser import parse_query
+from conversation import (
+    BRIEF,
+    FOLLOW_UP,
+    FULL,
+    OUTING,
+    build_weather_answer,
+    classify_intent,
+    is_full_weather_confirmation,
+)
+from geocoding import CityResolution, CityResolver, GeocodingError, NominatimCityResolver
+from parser import SUPPORTED_CITIES, parse_query
 from rate_limiter import InMemoryRateLimiter
-from session_store import InMemorySessionStore
+from session_store import ConversationContext, InMemorySessionStore
 from weather_client import (
     OpenMeteoClient,
     OpenWeatherClient,
@@ -67,6 +77,7 @@ def create_app(
     session_store: Optional[InMemorySessionStore] = None,
     weather_clients: Optional[Dict[str, WeatherProvider]] = None,
     default_provider: Optional[str] = None,
+    city_resolver: Optional[CityResolver] = None,
 ) -> Flask:
     """创建 Flask 应用；依赖可注入，便于脱离真实网络测试。"""
 
@@ -93,6 +104,11 @@ def create_app(
             f"Default weather provider is not configured: {effective_default_provider}"
         )
     store = session_store or InMemorySessionStore()
+    resolver = city_resolver or NominatimCityResolver(
+        base_url=effective_settings.geocoding_api_url,
+        user_agent=effective_settings.geocoding_user_agent,
+        timeout=effective_settings.request_timeout_seconds,
+    )
     clients_lock = RLock()
     chat_rate_limiter = InMemoryRateLimiter(
         effective_settings.chat_rate_limit_per_minute
@@ -278,38 +294,117 @@ def create_app(
             )
 
         parsed = parse_query(message)
-        city = parsed.city or store.get_city(session_id)
-        if city is None:
+        previous_context = store.get_context(session_id)
+        confirmation = bool(
+            previous_context
+            and previous_context.offered_full_weather
+            and is_full_weather_confirmation(message)
+        )
+        intent = classify_intent(
+            message,
+            has_full_weather_offer=bool(
+                previous_context and previous_context.offered_full_weather
+            ),
+        )
+        if intent == FOLLOW_UP:
+            intent = previous_context.intent if previous_context else BRIEF
+
+        resolutions = []
+        if parsed.location_terms:
+            try:
+                for location_term in parsed.location_terms:
+                    known_city = SUPPORTED_CITIES.get(location_term)
+                    resolution = (
+                        CityResolution(known_city)
+                        if known_city is not None
+                        else resolver.resolve(location_term)
+                    )
+                    if resolution is None:
+                        return _error_response(
+                            "CITY_NOT_FOUND",
+                            f"没有找到“{location_term}”，请检查城市名称。",
+                            422,
+                        )
+                    resolutions.append(resolution)
+            except GeocodingError:
+                return _error_response(
+                    "LOCATION_UNAVAILABLE", "城市查询服务暂时不可用，请稍后重试。", 502
+                )
+        elif previous_context:
+            resolutions = [CityResolution(city) for city in previous_context.cities]
+
+        if not resolutions:
             return _error_response("CITY_NOT_FOUND", "请提供要查询的城市。", 422)
 
+        if (
+            previous_context
+            and not parsed.date_is_explicit
+            and not parsed.location_terms
+        ):
+            day_offset = previous_context.day_offset
+            date_label = previous_context.date_label
+        else:
+            day_offset = parsed.day_offset
+            date_label = parsed.date_label
+
+        if confirmation:
+            intent = FULL
+
         try:
-            if parsed.day_offset == 0:
-                weather = selected_client.get_current(city)
-            else:
-                weather = selected_client.get_forecast(city, parsed.day_offset)
+            weather_results = []
+            for resolution in resolutions:
+                if day_offset == 0:
+                    weather = selected_client.get_current(resolution.city)
+                else:
+                    weather = selected_client.get_forecast(
+                        resolution.city, day_offset
+                    )
+                advice = _build_advice(day_offset, weather)
+                weather_payload = _weather_payload(weather, advice)
+                weather_results.append(
+                    {
+                        "city": resolution.city.name,
+                        "date": date_label,
+                        "corrected_from": resolution.corrected_from,
+                        "answer": build_weather_answer(
+                            resolution.city.name,
+                            date_label,
+                            weather,
+                            intent,
+                            corrected_from=resolution.corrected_from,
+                        ),
+                        "weather": weather_payload,
+                    }
+                )
         except WeatherClientError:
             return _error_response(
                 "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
             )
 
-        # 只在查询成功后保存城市，避免上游失败污染会话上下文。
-        store.set_city(session_id, city)
-        advice = _build_advice(parsed.day_offset, weather)
+        # 只在全部城市查询成功后保存上下文，避免失败污染后续对话。
+        store.set_context(
+            session_id,
+            ConversationContext(
+                cities=tuple(resolution.city for resolution in resolutions),
+                day_offset=day_offset,
+                date_label=date_label,
+                intent=intent,
+                offered_full_weather=intent == OUTING,
+            ),
+        )
+        first_result = weather_results[0]
         return jsonify(
             {
                 "session_id": session_id,
-                "city": city.name,
-                "date": parsed.date_label,
+                "city": first_result["city"],
+                "cities": [result["city"] for result in weather_results],
+                "date": date_label,
                 "provider": provider,
-                "answer": _build_answer(city.name, parsed.date_label, weather, advice),
-                "weather": {
-                    "temperature_c": weather.temperature_c,
-                    "condition": weather.condition,
-                    "humidity_percent": weather.humidity_percent,
-                    "wind_speed_mps": weather.wind_speed_mps,
-                    "rain_expected": weather.rain_expected,
-                    "advice": advice,
-                },
+                "intent": intent,
+                "display_mode": "weather_cards" if intent == FULL else "text",
+                "answer": "\n".join(result["answer"] for result in weather_results),
+                "weather": first_result["weather"],
+                "results": weather_results,
             }
         )
 
@@ -412,12 +507,15 @@ def _build_advice(day_offset: int, weather: WeatherData) -> Optional[str]:
     return "明天暂无明显降雨信号，出行可暂不携带雨具。"
 
 
-def _build_answer(city: str, date_label: str, weather: WeatherData, advice: Optional[str]) -> str:
-    answer = (
-        f"{city}{date_label}：{weather.condition}，气温约 {weather.temperature_c:.1f}℃，"
-        f"湿度 {weather.humidity_percent}%，风速 {weather.wind_speed_mps:.1f} m/s。"
-    )
-    return f"{answer}{advice or ''}"
+def _weather_payload(weather: WeatherData, advice: Optional[str]):
+    return {
+        "temperature_c": weather.temperature_c,
+        "condition": weather.condition,
+        "humidity_percent": weather.humidity_percent,
+        "wind_speed_mps": weather.wind_speed_mps,
+        "rain_expected": weather.rain_expected,
+        "advice": advice,
+    }
 
 
 if __name__ == "__main__":

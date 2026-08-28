@@ -20,6 +20,10 @@ class Settings:
     visual_crossing_api_key: Optional[str] = None
     environment: str = "development"
     chat_rate_limit_per_minute: int = 30
+    geocoding_api_url: str = "https://nominatim.openstreetmap.org/search"
+    geocoding_user_agent: str = (
+        "weather-agent/1.0 (https://github.com/Holmes522/weather-agent)"
+    )
 
     @property
     def is_production(self) -> bool:
@@ -49,6 +53,14 @@ class Settings:
         environment = os.getenv("APP_ENV", "development").strip().lower()
         if environment not in {"development", "production"}:
             raise ConfigurationError("APP_ENV must be development or production")
+        geocoding_api_url = os.getenv(
+            "GEOCODING_API_URL", cls.geocoding_api_url
+        ).strip()
+        geocoding_user_agent = os.getenv(
+            "GEOCODING_USER_AGENT", cls.geocoding_user_agent
+        ).strip()
+        if not geocoding_api_url.startswith("https://") or not geocoding_user_agent:
+            raise ConfigurationError("GEOCODING_API_URL and GEOCODING_USER_AGENT are invalid")
 
         try:
             chat_rate_limit = int(
@@ -91,4 +103,6 @@ class Settings:
             visual_crossing_api_key=visual_crossing_api_key,
             environment=environment,
             chat_rate_limit_per_minute=chat_rate_limit,
+            geocoding_api_url=geocoding_api_url,
+            geocoding_user_agent=geocoding_user_agent,
         )

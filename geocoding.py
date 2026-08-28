@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 from threading import Lock
 from time import monotonic, sleep
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 
 import requests
 
@@ -22,6 +22,11 @@ class CityResolution:
 
 
 RequestGet = Callable[..., Any]
+
+
+class CityResolver(Protocol):
+    def resolve(self, location_term: str) -> Optional[CityResolution]:
+        ...
 
 
 class NominatimCityResolver:
