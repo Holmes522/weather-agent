@@ -76,6 +76,13 @@ parser + session_store + weather_client → /chat
 
 风险与缓解：模型输出不可信，因此工具名称和参数由代码白名单验证；模型服务可能超时或产生费用，因此设置超时、输出上限、历史上限、工具轮次上限和生产限流；自定义端点只允许 HTTPS，只有 loopback Ollama 可使用 HTTP。
 
+## Conversation History Upgrade
+
+1. 扩展内存存储，定义匿名会话摘要和可重放消息契约。
+2. 增加会话 CRUD API，并在成功聊天后归档用户与 Agent 回复。
+3. 实现桌面侧边栏、移动抽屉和新建/切换/删除交互。
+4. 补充 README，完成自动化测试、安全审查和真实浏览器验证。
+
 ## Conversational Weather Upgrade
 
 1. `location-understanding`：多城市解析 → 动态地理编码 → 纠错与缓存。

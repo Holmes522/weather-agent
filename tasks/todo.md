@@ -16,3 +16,6 @@
 - [x] Task 14: `/chat` Agent 集成、天气数据落地和有限会话历史；验证：`pytest tests/test_ai_chat.py`
 - [x] Task 15: 本机模型配置接口和页面；验证：`pytest tests/test_llm_config.py`
 - [x] Task 16: 文档、完整测试、安全审查和浏览器验证；验证：`pytest -q`
+- [ ] Task 17: 会话存储与 REST 契约；验证：`pytest tests/test_session_store.py tests/test_conversation_history.py`
+- [ ] Task 18: 历史侧边栏与响应式交互；验证：页面契约测试、`node --check static/app.js` 和浏览器检查
+- [ ] Task 19: 文档、完整回归、安全审查与远端 CI；验证：`pytest -q`

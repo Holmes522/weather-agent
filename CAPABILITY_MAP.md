@@ -10,7 +10,10 @@
 | `agent-orchestrator` | 驱动模型、天气工具和最终回复，限制工具轮次 | `llm-chat`, `weather-tool` |
 | `model-config` | 本机运行时模型配置和生产环境变量配置 | `llm-chat` |
 | `agent-presentation` | 展示 AI 状态、通用文本回复和天气卡片 | `agent-orchestrator`, `model-config`, `chat-presentation` |
+| `conversation-history` | 匿名会话 CRUD、历史消息重放和响应式侧边栏 | `agent-presentation` |
 
 Build order: `location-understanding` → `conversational-intent` → `chat-presentation`
 
 AI upgrade build order: `llm-chat` → `weather-tool` → `agent-orchestrator` → `model-config` → `agent-presentation`
+
+History upgrade build order: `agent-presentation` → `conversation-history`
