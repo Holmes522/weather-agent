@@ -186,6 +186,224 @@ class OpenMeteoClient:
         return payload
 
 
+class WeatherApiClient:
+    """WeatherAPI.com 当前天气与三日预报客户端。
+
+    官方接口契约：https://www.weatherapi.com/docs/
+    """
+
+    BASE_URL = "https://api.weatherapi.com/v1"
+    DEFAULT_TIMEOUT: Tuple[float, float] = (3.05, 10.0)
+
+    def __init__(
+        self,
+        api_key: str,
+        request_get: RequestGet = requests.get,
+        timeout: Tuple[float, float] = DEFAULT_TIMEOUT,
+    ):
+        if not api_key or not api_key.strip():
+            raise ValueError("WeatherAPI.com API key is required")
+        self._api_key = api_key.strip()
+        self._request_get = request_get
+        self._timeout = timeout
+
+    def get_current(self, city: City) -> WeatherData:
+        payload = self._request_json("/current.json", city, {})
+        current = _dict_field(payload, "current")
+        condition = _condition_text(_dict_field(current, "condition"))
+        precipitation = _non_negative_number(
+            current.get("precip_mm"), "current.precip_mm"
+        )
+        return WeatherData(
+            temperature_c=round(_number(current.get("temp_c"), "current.temp_c"), 1),
+            condition=condition,
+            humidity_percent=round(_percentage(current.get("humidity"), "current.humidity")),
+            wind_speed_mps=round(
+                _non_negative_number(current.get("wind_kph"), "current.wind_kph")
+                / 3.6,
+                1,
+            ),
+            rain_expected=precipitation > 0 or _condition_mentions_rain(condition),
+        )
+
+    def get_forecast(self, city: City, day_offset: int) -> WeatherData:
+        payload = self._request_json(
+            "/forecast.json",
+            city,
+            {"days": 3, "aqi": "no", "alerts": "no"},
+        )
+        forecast = _dict_field(payload, "forecast")
+        forecast_days = forecast.get("forecastday")
+        if (
+            not isinstance(forecast_days, list)
+            or isinstance(day_offset, bool)
+            or not isinstance(day_offset, int)
+            or day_offset < 0
+            or day_offset >= len(forecast_days)
+            or not isinstance(forecast_days[day_offset], dict)
+        ):
+            raise WeatherDataError(
+                "WeatherAPI.com forecast does not contain the requested day"
+            )
+        day = _dict_field(forecast_days[day_offset], "day")
+        condition = _condition_text(_dict_field(day, "condition"))
+        rain_probability = _percentage(
+            day.get("daily_chance_of_rain"), "day.daily_chance_of_rain"
+        )
+        precipitation = _non_negative_number(
+            day.get("totalprecip_mm"), "day.totalprecip_mm"
+        )
+        rain_expected = (
+            _zero_or_one(day.get("daily_will_it_rain"), "day.daily_will_it_rain")
+            == 1
+            or rain_probability >= 50
+            or precipitation > 0
+        )
+        return WeatherData(
+            temperature_c=round(_number(day.get("avgtemp_c"), "day.avgtemp_c"), 1),
+            condition=condition,
+            humidity_percent=round(_percentage(day.get("avghumidity"), "day.avghumidity")),
+            wind_speed_mps=round(
+                _non_negative_number(day.get("maxwind_kph"), "day.maxwind_kph")
+                / 3.6,
+                1,
+            ),
+            rain_expected=rain_expected,
+        )
+
+    def _request_json(
+        self, path: str, city: City, extra_params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        params = {
+            "key": self._api_key,
+            "q": f"{city.latitude},{city.longitude}",
+            "lang": "zh",
+            **extra_params,
+        }
+        try:
+            response = self._request_get(
+                url=f"{self.BASE_URL}{path}",
+                params=params,
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, TimeoutError, ValueError) as exc:
+            raise WeatherUpstreamError("WeatherAPI.com request failed") from exc
+        if not isinstance(payload, dict):
+            raise WeatherDataError("WeatherAPI.com response must be an object")
+        return payload
+
+
+class VisualCrossingClient:
+    """Visual Crossing Timeline 当前天气与预报客户端。
+
+    官方接口契约：https://www.visualcrossing.com/resources/documentation/weather-api/timeline-weather-api/
+    """
+
+    BASE_URL = (
+        "https://weather.visualcrossing.com/VisualCrossingWebServices/"
+        "rest/services/timeline"
+    )
+    DEFAULT_TIMEOUT: Tuple[float, float] = (3.05, 10.0)
+
+    def __init__(
+        self,
+        api_key: str,
+        request_get: RequestGet = requests.get,
+        timeout: Tuple[float, float] = DEFAULT_TIMEOUT,
+    ):
+        if not api_key or not api_key.strip():
+            raise ValueError("Visual Crossing API key is required")
+        self._api_key = api_key.strip()
+        self._request_get = request_get
+        self._timeout = timeout
+
+    def get_current(self, city: City) -> WeatherData:
+        payload = self._request_json(city, "current")
+        current = _dict_field(payload, "currentConditions")
+        return self._normalize_record(current, include_probability=False)
+
+    def get_forecast(self, city: City, day_offset: int) -> WeatherData:
+        payload = self._request_json(city, "days")
+        days = payload.get("days")
+        if (
+            not isinstance(days, list)
+            or isinstance(day_offset, bool)
+            or not isinstance(day_offset, int)
+            or day_offset < 0
+            or day_offset >= len(days)
+            or not isinstance(days[day_offset], dict)
+        ):
+            raise WeatherDataError(
+                "Visual Crossing forecast does not contain the requested day"
+            )
+        return self._normalize_record(days[day_offset], include_probability=True)
+
+    def _request_json(self, city: City, include: str) -> Dict[str, Any]:
+        elements = "temp,humidity,windspeed,conditions,icon,precip,preciptype"
+        if include == "days":
+            elements += ",precipprob"
+        params = {
+            "key": self._api_key,
+            "unitGroup": "metric",
+            "include": include,
+            "elements": elements,
+            "contentType": "json",
+        }
+        try:
+            response = self._request_get(
+                url=f"{self.BASE_URL}/{city.latitude:.4f},{city.longitude:.4f}",
+                params=params,
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, TimeoutError, ValueError) as exc:
+            raise WeatherUpstreamError("Visual Crossing request failed") from exc
+        if not isinstance(payload, dict):
+            raise WeatherDataError("Visual Crossing response must be an object")
+        return payload
+
+    @staticmethod
+    def _normalize_record(
+        record: Dict[str, Any], include_probability: bool
+    ) -> WeatherData:
+        icon = record.get("icon")
+        conditions = record.get("conditions")
+        if not isinstance(icon, str) or not isinstance(conditions, str):
+            raise WeatherDataError("Visual Crossing condition is invalid")
+        precipitation = _non_negative_number(
+            record.get("precip"), "record.precip"
+        )
+        precipitation_types = _precipitation_types(record.get("preciptype"))
+        probability = (
+            _percentage(record.get("precipprob"), "record.precipprob")
+            if include_probability
+            else 0
+        )
+        rain_expected = (
+            precipitation > 0
+            or probability >= 50
+            or bool(precipitation_types & {"rain", "freezingrain"})
+            or "rain" in icon.lower()
+            or "thunder" in icon.lower()
+        )
+        return WeatherData(
+            temperature_c=round(_number(record.get("temp"), "record.temp"), 1),
+            condition=_visual_crossing_condition(icon),
+            humidity_percent=round(
+                _percentage(record.get("humidity"), "record.humidity")
+            ),
+            wind_speed_mps=round(
+                _non_negative_number(record.get("windspeed"), "record.windspeed")
+                / 3.6,
+                1,
+            ),
+            rain_expected=rain_expected,
+        )
+
+
 class OpenWeatherClient:
     """使用官方 weather/forecast 接口，所有请求都设置连接和读取超时。"""
 
@@ -521,6 +739,56 @@ def _non_negative_number(value: Any, field_name: str) -> float:
     if number < 0:
         raise WeatherDataError(f"{field_name} must not be negative")
     return number
+
+
+def _zero_or_one(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or value not in {0, 1}:
+        raise WeatherDataError(f"{field_name} must be 0 or 1")
+    return int(value)
+
+
+def _condition_text(condition: Dict[str, Any]) -> str:
+    text = condition.get("text")
+    if not isinstance(text, str) or not text.strip() or len(text.strip()) > 80:
+        raise WeatherDataError("condition.text is invalid")
+    return text.strip()
+
+
+def _condition_mentions_rain(condition: str) -> bool:
+    lowered = condition.lower()
+    return any(
+        marker in lowered
+        for marker in ("雨", "雷", "rain", "drizzle", "shower", "thunder")
+    )
+
+
+def _precipitation_types(value: Any) -> set:
+    if value is None:
+        return set()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise WeatherDataError("preciptype is invalid")
+    return {item.strip().lower() for item in value}
+
+
+def _visual_crossing_condition(icon: str) -> str:
+    normalized = icon.strip().lower()
+    if "thunder" in normalized:
+        return "雷雨"
+    if "rain" in normalized or "showers" in normalized:
+        return "雨"
+    if "snow" in normalized or "ice" in normalized:
+        return "雪"
+    if "fog" in normalized:
+        return "雾"
+    if "partly-cloudy" in normalized:
+        return "多云"
+    if "cloudy" in normalized or "overcast" in normalized:
+        return "阴"
+    if "clear" in normalized:
+        return "晴"
+    if "wind" in normalized:
+        return "大风"
+    return "天气"
 
 
 def _daily_value(daily: Dict[str, Any], field_name: str, day_offset: int) -> Any:
