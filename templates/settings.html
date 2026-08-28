@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="配置天气 Agent 使用的天气数据源。">
-    <title>配置天气 API · 晴问</title>
+    <meta name="description" content="配置天气 Agent 使用的天气数据源和 AI 模型。">
+    <title>配置 Agent · 晴问</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
   </head>
@@ -13,9 +13,9 @@
       <header class="settings-header">
         <a class="back-link" href="/">← 返回天气对话</a>
         <div>
-          <p class="eyebrow">Provider 管理</p>
-          <h1>配置天气 API</h1>
-          <p>选择一个已适配的天气服务，把它加入聊天页的数据源列表。</p>
+          <p class="eyebrow">Agent 配置</p>
+          <h1>连接天气与 AI</h1>
+          <p>天气 API 提供真实数据；AI 模型负责理解问题、多轮聊天和组织回答。</p>
         </div>
       </header>
 
@@ -95,6 +95,76 @@
           </aside>
         </section>
       </div>
+
+      <section class="config-card llm-config-section" aria-labelledby="llm-config-title">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">可选 · 开启通用聊天</p>
+            <h2 id="llm-config-title">连接 AI 模型</h2>
+          </div>
+          <span class="llm-status-badge{% if llm_status.configured %} is-configured{% endif %}" id="llm-status">
+            {% if llm_status.configured %}{{ llm_status.provider }} · {{ llm_status.model }}{% else %}尚未配置{% endif %}
+          </span>
+        </div>
+
+        <form id="llm-config-form" class="provider-config-form">
+          <label for="llm-provider">模型服务</label>
+          <select id="llm-provider" name="provider" required>
+            <option value="" selected disabled>请选择模型服务</option>
+            {% for provider in llm_providers %}
+            <option value="{{ provider.id }}" data-base-url="{{ provider.base_url or '' }}" data-requires-key="{{ 'true' if provider.requires_key else 'false' }}">{{ provider.name }}</option>
+            {% endfor %}
+          </select>
+
+          <label for="llm-model">模型 ID</label>
+          <input
+            id="llm-model"
+            name="model"
+            type="text"
+            maxlength="128"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="输入服务控制台中的模型 ID"
+            required
+          >
+
+          <label for="llm-api-key">模型 API Key</label>
+          <input
+            id="llm-api-key"
+            name="api_key"
+            type="password"
+            maxlength="2048"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Ollama 本机模式不需要 Key"
+          >
+
+          <div class="conditional-field" id="llm-base-url-field" hidden>
+            <label for="llm-base-url">兼容接口 Base URL</label>
+            <input
+              id="llm-base-url"
+              name="base_url"
+              type="url"
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="例如 https://models.example.com/v1"
+            >
+            <small>外部地址必须使用 HTTPS；本机 Ollama 使用预设的 loopback 地址。</small>
+          </div>
+
+          <p class="form-message" id="llm-config-result" role="status" aria-live="polite"></p>
+
+          <button class="save-provider-button" id="save-llm-button" type="submit">
+            保存 AI 模型到当前进程
+          </button>
+        </form>
+
+        <aside class="privacy-note">
+          <strong>对话隐私与费用</strong>
+          <p>配置后，聊天消息和最近的有限对话历史会发送给你选择的模型服务。Key 仅保存在当前 Python 进程内存中；请同时关注对应服务的隐私政策、调用额度和账单。</p>
+        </aside>
+      </section>
     </main>
 
     <script src="{{ url_for('static', filename='settings.js') }}" defer></script>

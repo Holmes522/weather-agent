@@ -36,9 +36,18 @@ def test_production_hides_runtime_provider_configuration():
 
     assert http.get("/settings").status_code == 404
     assert http.get("/api/providers").status_code == 404
+    assert http.get("/api/llm").status_code == 404
     assert http.post(
         "/api/providers",
         json={"provider": "openweather", "api_key": "not-a-real-key"},
+    ).status_code == 404
+    assert http.post(
+        "/api/llm",
+        json={
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "api_key": "not-a-real-key",
+        },
     ).status_code == 404
     assert 'href="/settings"' not in http.get("/").get_data(as_text=True)
 

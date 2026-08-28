@@ -35,7 +35,7 @@ from session_store import (
     ConversationMessage,
     InMemorySessionStore,
 )
-from llm_client import LLMClientError
+from llm_client import LLMClientError, OpenAICompatibleClient
 from weather_client import (
     OpenMeteoClient,
     OpenWeatherClient,
@@ -84,6 +84,38 @@ PROVIDER_CATALOG = (
         "configurable": True,
     },
 )
+LLM_PROVIDER_CATALOG = (
+    {
+        "id": "openai",
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "requires_key": True,
+    },
+    {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "base_url": "https://api.deepseek.com",
+        "requires_key": True,
+    },
+    {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "requires_key": True,
+    },
+    {
+        "id": "ollama",
+        "name": "Ollama（本机）",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "requires_key": False,
+    },
+    {
+        "id": "custom",
+        "name": "自定义兼容接口",
+        "base_url": None,
+        "requires_key": True,
+    },
+)
 
 
 def create_app(
@@ -125,9 +157,21 @@ def create_app(
         user_agent=effective_settings.geocoding_user_agent,
         timeout=effective_settings.request_timeout_seconds,
     )
+    initial_llm = llm_client
+    if initial_llm is None and effective_settings.llm_base_url:
+        try:
+            initial_llm = OpenAICompatibleClient(
+                api_key=effective_settings.llm_api_key,
+                base_url=effective_settings.llm_base_url,
+                model=effective_settings.llm_model or "",
+                display_name=effective_settings.llm_display_name,
+            )
+        except ValueError as error:
+            raise ConfigurationError("LLM environment configuration is invalid") from error
+
     clients_lock = RLock()
     llm_lock = RLock()
-    llm_state = {"client": llm_client}
+    llm_state = {"client": initial_llm}
     chat_rate_limiter = InMemoryRateLimiter(
         effective_settings.chat_rate_limit_per_minute
     )
@@ -208,6 +252,8 @@ def create_app(
             configurable_providers=[
                 provider for provider in PROVIDER_CATALOG if provider["configurable"]
             ],
+            llm_providers=LLM_PROVIDER_CATALOG,
+            llm_status=_llm_status(llm_state, llm_lock),
         )
 
     @app.get("/api/providers")
@@ -258,6 +304,42 @@ def create_app(
                     }
                 }
             ),
+            200 if was_configured else 201,
+        )
+
+    @app.get("/api/llm")
+    def llm_status():
+        if effective_settings.is_production:
+            abort(404)
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+        return jsonify({"llm": _llm_status(llm_state, llm_lock)})
+
+    @app.post("/api/llm")
+    def configure_llm():
+        if effective_settings.is_production:
+            abort(404)
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return _error_response("INVALID_JSON", "请求必须是 JSON 对象。", 400)
+        try:
+            client = _build_runtime_llm(body)
+        except (TypeError, ValueError):
+            return _error_response(
+                "INVALID_LLM_CONFIG",
+                "模型配置不完整或格式不正确，请检查后重试。",
+                422,
+            )
+
+        with llm_lock:
+            was_configured = llm_state["client"] is not None
+            llm_state["client"] = client
+        return (
+            jsonify({"llm": _llm_status(llm_state, llm_lock)}),
             200 if was_configured else 201,
         )
 
@@ -694,6 +776,41 @@ def _provider_statuses(clients: Dict[str, WeatherProvider], lock: RLock):
         }
         for provider in PROVIDER_CATALOG
     ]
+
+
+def _llm_status(llm_state, lock: RLock):
+    with lock:
+        client = llm_state["client"]
+    if client is None:
+        return {"configured": False, "provider": None, "model": None}
+    return {
+        "configured": True,
+        "provider": client.display_name,
+        "model": client.model,
+    }
+
+
+def _build_runtime_llm(body: Dict[str, object]) -> OpenAICompatibleClient:
+    provider_id = body.get("provider")
+    provider = next(
+        (item for item in LLM_PROVIDER_CATALOG if item["id"] == provider_id),
+        None,
+    )
+    if provider is None:
+        raise ValueError("unknown LLM provider")
+    model = body.get("model")
+    api_key = body.get("api_key")
+    if not isinstance(model, str) or not isinstance(api_key, str):
+        raise ValueError("invalid LLM fields")
+    base_url = body.get("base_url") if provider_id == "custom" else provider["base_url"]
+    if not isinstance(base_url, str):
+        raise ValueError("custom LLM base URL is required")
+    return OpenAICompatibleClient(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        display_name=provider["name"],
+    )
 
 
 def _require_local_request():

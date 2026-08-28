@@ -25,6 +25,10 @@ class Settings:
     geocoding_user_agent: str = (
         "weather-agent/1.0 (https://github.com/Holmes522/weather-agent)"
     )
+    llm_api_key: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_display_name: str = "AI 模型"
 
     @property
     def is_production(self) -> bool:
@@ -51,6 +55,14 @@ class Settings:
         visual_crossing_api_key = (
             os.getenv("VISUAL_CROSSING_API_KEY", "").strip() or None
         )
+        llm_api_key = os.getenv("LLM_API_KEY", "").strip() or None
+        llm_base_url = os.getenv("LLM_BASE_URL", "").strip() or None
+        llm_model = os.getenv("LLM_MODEL", "").strip() or None
+        llm_display_name = os.getenv("LLM_DISPLAY_NAME", "AI 模型").strip()
+        if bool(llm_base_url) != bool(llm_model) or not llm_display_name:
+            raise ConfigurationError(
+                "LLM_BASE_URL and LLM_MODEL must both be configured"
+            )
         environment = os.getenv("APP_ENV", "development").strip().lower()
         if environment not in {"development", "production"}:
             raise ConfigurationError("APP_ENV must be development or production")
@@ -115,4 +127,8 @@ class Settings:
             chat_rate_limit_per_minute=chat_rate_limit,
             geocoding_api_url=geocoding_api_url,
             geocoding_user_agent=geocoding_user_agent,
+            llm_api_key=llm_api_key,
+            llm_base_url=llm_base_url,
+            llm_model=llm_model,
+            llm_display_name=llm_display_name,
         )

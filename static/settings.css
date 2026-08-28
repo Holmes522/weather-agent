@@ -53,6 +53,29 @@
   align-items: start;
 }
 
+.llm-config-section {
+  margin-top: 20px;
+}
+
+.llm-status-badge {
+  max-width: min(48%, 360px);
+  padding: 6px 10px;
+  overflow: hidden;
+  color: var(--muted);
+  background: #f5f9fb;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-status-badge.is-configured {
+  color: #237a55;
+  background: #edf8f3;
+  border-color: #b7dfcc;
+}
+
 .provider-overview,
 .config-card {
   background: var(--paper);
@@ -272,5 +295,9 @@
   .provider-overview,
   .config-card {
     border-radius: 14px;
+  }
+
+  .llm-status-badge {
+    max-width: 100%;
   }
 }
