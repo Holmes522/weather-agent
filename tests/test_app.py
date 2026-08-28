@@ -163,3 +163,45 @@ def test_chat_rejects_unknown_provider(settings):
         "code": "INVALID_PROVIDER",
         "message": "不支持该天气服务，可选值：openweather。",
     }
+
+
+def test_home_renders_weather_chat_platform(settings):
+    app = create_app(
+        settings=settings,
+        weather_clients={
+            "openweather": FakeWeatherClient(),
+            "qweather": FakeWeatherClient(),
+        },
+        default_provider="qweather",
+    )
+
+    response = app.test_client().get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="chat-form"' in html
+    assert 'id="message-input"' in html
+    assert 'id="provider-select"' in html
+    assert '<option value="qweather" selected>' in html
+    assert '<option value="openweather"' in html
+    assert '/static/styles.css' in html
+    assert '/static/app.js' in html
+
+
+@pytest.mark.parametrize("path", ["/", "/chat"])
+def test_responses_include_browser_security_headers(settings, path):
+    app = create_app(settings=settings, weather_client=FakeWeatherClient())
+    http = app.test_client()
+
+    if path == "/chat":
+        response = http.post(
+            path,
+            json={"message": "北京天气", "session_id": "security-session"},
+        )
+    else:
+        response = http.get(path)
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]

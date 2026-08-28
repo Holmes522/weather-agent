@@ -4,7 +4,7 @@ import re
 from typing import Dict, Optional
 from uuid import uuid4
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 from config import ConfigurationError, Settings
 from parser import parse_query
@@ -55,6 +55,52 @@ def create_app(
 
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+
+    @app.after_request
+    def add_security_headers(response):
+        """为网页和 JSON API 添加适合当前同源应用的基础安全响应头。"""
+
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        return response
+
+    @app.get("/")
+    def index():
+        """渲染不暴露天气服务密钥的同源聊天界面。"""
+
+        provider_labels = {
+            "qweather": "和风天气",
+            "openweather": "OpenWeather",
+        }
+        ordered_providers = sorted(
+            clients,
+            key=lambda provider_name: provider_name != effective_default_provider,
+        )
+        return render_template(
+            "index.html",
+            providers=[
+                {
+                    "value": provider_name,
+                    "label": provider_labels.get(provider_name, provider_name),
+                }
+                for provider_name in ordered_providers
+            ],
+            default_provider=effective_default_provider,
+        )
 
     @app.errorhandler(413)
     def payload_too_large(_error):

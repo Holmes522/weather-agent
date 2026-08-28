@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="用自然语言查询今天、明天和后天的城市天气。">
+    <title>晴问 · 天气 Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="晴问天气 Agent 首页">
+          <span class="brand-mark" aria-hidden="true">晴</span>
+          <span>
+            <strong>晴问</strong>
+            <small>天气 Agent</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <span class="service-status">
+            <span class="status-dot" aria-hidden="true"></span>
+            服务已连接
+          </span>
+          <label class="provider-control" for="provider-select">
+            <span>数据源</span>
+            <select id="provider-select" name="provider">
+              {% for provider in providers %}
+              <option value="{{ provider.value }}"{% if provider.value == default_provider %} selected{% endif %}>{{ provider.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section class="chat-panel" aria-label="天气对话">
+        <div class="welcome" id="welcome-panel">
+          <p class="eyebrow">自然语言天气查询</p>
+          <h1>今天，想查哪座城市？</h1>
+          <p class="welcome-copy">问一句就好，我会告诉你温度、天气、湿度、风速和出行建议。</p>
+          <div class="suggestions" aria-label="示例问题">
+            <button type="button" class="suggestion" data-prompt="北京今天天气怎么样？">北京今天天气</button>
+            <button type="button" class="suggestion" data-prompt="上海明天会下雨吗？">上海明天会下雨吗</button>
+            <button type="button" class="suggestion" data-prompt="广州后天天气怎么样？">广州后天天气</button>
+          </div>
+        </div>
+
+        <ol class="chat-log" id="chat-log" aria-live="polite" aria-label="对话记录"></ol>
+
+        <div class="composer-wrap">
+          <form class="composer" id="chat-form">
+            <label class="sr-only" for="message-input">输入天气问题</label>
+            <textarea
+              id="message-input"
+              name="message"
+              rows="1"
+              maxlength="200"
+              placeholder="例如：杭州明天会下雨吗？"
+              autocomplete="off"
+              required
+            ></textarea>
+            <button class="send-button" id="send-button" type="submit" aria-label="发送">
+              <span>发送</span>
+              <span class="send-arrow" aria-hidden="true">↑</span>
+            </button>
+          </form>
+          <p class="composer-hint">按 Enter 发送 · Shift + Enter 换行 · 支持“那后天呢？”</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>

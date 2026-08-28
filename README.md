@@ -1,11 +1,12 @@
 # Weather Query Agent MVP
 
-一个规则驱动的中文天气查询 Agent MVP。它提供 `POST /chat`，识别城市和“今天/明天/后天”，可选择 OpenWeatherMap 或和风天气，并用内存字典保存同一 `session_id` 的上一次城市。
+一个带可视化聊天界面的规则驱动中文天气查询 Agent MVP。它提供网页首页和 `POST /chat`，识别城市及“今天/明天/后天”，可选择 OpenWeatherMap 或和风天气，并用内存字典保存同一 `session_id` 的上一次城市。
 
 ## 功能
 
 - 支持示例：`北京今天天气怎么样？`、`上海明天会下雨吗？`
 - 支持同一会话追问：`那后天呢？`
+- 提供响应式网页聊天界面，以天气卡展示温度、天气、湿度、风速和降雨建议。
 - 支持天气 Provider：`openweather`、`qweather`。
 - 可通过环境变量设置默认 Provider，也可在单次请求中选择。
 - 返回摄氏温度、天气状况、湿度、风速、是否预期下雨，以及明天的简单建议。
@@ -20,6 +21,11 @@
 ├── parser.py
 ├── session_store.py
 ├── weather_client.py
+├── templates/
+│   └── index.html
+├── static/
+│   ├── app.js
+│   └── styles.css
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
@@ -64,6 +70,16 @@ python app.py
 ```
 
 服务默认监听 `http://127.0.0.1:5000`。
+
+## 使用可视化平台
+
+保持运行 `python app.py` 的 PowerShell 窗口不要关闭，然后在浏览器打开：
+
+<http://127.0.0.1:5000>
+
+在输入框中直接提问，例如 `北京今天天气怎么样？`。查询成功后可以继续输入 `那后天呢？`，网页会沿用当前浏览器标签页中的会话 ID，后端会记住上次查询的城市。右上角的数据源下拉框只显示已配置的天气 Provider。
+
+网页不会接收或保存天气 API Key；Key 始终只由 Flask 后端从环境变量读取。关闭或重启 Flask 后，内存中的多轮会话会清空。
 
 ## 测试
 
