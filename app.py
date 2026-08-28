@@ -395,6 +395,7 @@ def create_app(
             )
 
         previous_context = store.get_context(session_id)
+        grounding_required = _requires_weather_grounding(message, previous_context)
 
         with llm_lock:
             active_llm = llm_state["client"]
@@ -440,42 +441,47 @@ def create_app(
                     "AI_UNAVAILABLE", "AI 服务暂时不可用，请稍后重试。", 502
                 )
 
-            previous_messages = previous_context.messages if previous_context else ()
-            messages = (
-                *previous_messages,
-                ConversationMessage("user", message),
-                ConversationMessage("assistant", agent_result.answer),
-            )[-MAX_HISTORY_MESSAGES:]
-            if agent_tool_contexts:
-                last_input, last_resolutions = agent_tool_contexts[-1]
-                context = ConversationContext(
-                    cities=tuple(item.city for item in last_resolutions),
-                    day_offset=last_input.day_offset,
-                    date_label=_date_label(last_input.day_offset),
-                    intent=_intent_from_detail(last_input.detail),
-                    offered_full_weather=last_input.detail == "advice",
-                    messages=messages,
+            if agent_result.tool_results or not grounding_required:
+                previous_messages = (
+                    previous_context.messages if previous_context else ()
                 )
-            else:
-                context = ConversationContext(
-                    cities=previous_context.cities if previous_context else (),
-                    day_offset=previous_context.day_offset if previous_context else 0,
-                    date_label=previous_context.date_label if previous_context else "今天",
-                    intent=previous_context.intent if previous_context else BRIEF,
-                    offered_full_weather=False,
-                    messages=messages,
+                messages = (
+                    *previous_messages,
+                    ConversationMessage("user", message),
+                    ConversationMessage("assistant", agent_result.answer),
+                )[-MAX_HISTORY_MESSAGES:]
+                if agent_tool_contexts:
+                    last_input, last_resolutions = agent_tool_contexts[-1]
+                    context = ConversationContext(
+                        cities=tuple(item.city for item in last_resolutions),
+                        day_offset=last_input.day_offset,
+                        date_label=_date_label(last_input.day_offset),
+                        intent=_intent_from_detail(last_input.detail),
+                        offered_full_weather=last_input.detail == "advice",
+                        messages=messages,
+                    )
+                else:
+                    context = ConversationContext(
+                        cities=previous_context.cities if previous_context else (),
+                        day_offset=previous_context.day_offset if previous_context else 0,
+                        date_label=(
+                            previous_context.date_label if previous_context else "今天"
+                        ),
+                        intent=previous_context.intent if previous_context else BRIEF,
+                        offered_full_weather=False,
+                        messages=messages,
+                    )
+                store.set_context(session_id, context)
+                return jsonify(
+                    _agent_response_payload(
+                        session_id=session_id,
+                        provider=provider,
+                        model_name=active_llm.display_name,
+                        answer=agent_result.answer,
+                        tool_results=agent_result.tool_results,
+                        tool_inputs=agent_result.tool_inputs,
+                    )
                 )
-            store.set_context(session_id, context)
-            return jsonify(
-                _agent_response_payload(
-                    session_id=session_id,
-                    provider=provider,
-                    model_name=active_llm.display_name,
-                    answer=agent_result.answer,
-                    tool_results=agent_result.tool_results,
-                    tool_inputs=agent_result.tool_inputs,
-                )
-            )
 
         fallback_intent = classify_intent(
             message,
@@ -724,9 +730,32 @@ def _date_label(day_offset: int) -> str:
 def _looks_like_weather_request(message: str) -> bool:
     return bool(
         re.search(
-            r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|冷不冷|热不热|今天|明天|后天",
+            r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热|今天|明天|后天",
             message,
         )
+    )
+
+
+def _requires_weather_grounding(
+    message: str, previous_context: Optional[ConversationContext]
+) -> bool:
+    # Definition and explanation questions may mention weather vocabulary without
+    # asking for live conditions, so they can be answered directly by the model.
+    if re.search(r"什么是|是什么意思|解释(?:一下)?|定义|概念|原理", message):
+        return False
+    if not re.search(
+        r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热",
+        message,
+    ):
+        return False
+    parsed = parse_query(message)
+    has_city_context = bool(previous_context and previous_context.cities)
+    has_relative_date = any(label in message for label in ("今天", "明天", "后天"))
+    return bool(
+        parsed.location_terms
+        or has_city_context
+        or has_relative_date
+        or "天气" in message
     )
 
 

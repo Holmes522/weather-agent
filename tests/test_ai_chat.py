@@ -210,3 +210,65 @@ def test_home_explains_weather_only_mode_without_ai_model():
 
     assert "天气模式" in html
     assert "配置 AI 后还能进行通用聊天" in html
+
+
+def test_explicit_weather_question_never_uses_an_ungrounded_model_answer():
+    weather = FakeWeatherClient()
+    model = FakeLLMClient([AssistantTurn("我猜明天一定是晴天。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "深圳明天适合跑步吗？", "session_id": "grounded-weather"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert "我猜" not in body["answer"]
+    assert body["intent"] == "outing"
+    assert body["weather"]["rain_expected"] is True
+    assert weather.calls == [("forecast", "深圳", 1)]
+
+
+def test_weather_concept_explanation_does_not_require_live_weather_data():
+    weather = FakeWeatherClient()
+    model = FakeLLMClient([AssistantTurn("湿度表示空气中水汽含量的相对程度。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat", json={"message": "解释一下什么是湿度", "session_id": "concept"}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["mode"] == "agent"
+    assert "水汽" in response.get_json()["answer"]
+    assert weather.calls == []
+
+
+def test_weather_question_without_city_never_uses_model_guess():
+    weather = FakeWeatherClient()
+    model = FakeLLMClient([AssistantTurn("明天晴朗，最高温度 28℃。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat", json={"message": "明天天气怎么样？", "session_id": "missing-city"}
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == {
+        "code": "CITY_NOT_FOUND",
+        "message": "请提供要查询的城市。",
+    }
+    assert weather.calls == []

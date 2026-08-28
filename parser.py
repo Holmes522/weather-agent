@@ -49,7 +49,7 @@ _CITY_PATTERN = re.compile(
 _DATE_PATTERN = re.compile("|".join(label for label, _offset in _TIME_PATTERNS))
 _LOCATION_END_PATTERN = re.compile(
     r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|有雨|"
-    r"出门|带伞|雨伞|带什么|穿什么|穿衣"
+    r"出门|带伞|雨伞|带什么|穿什么|穿衣|适合|跑步|户外|运动"
 )
 _LOCATION_SEPARATOR_PATTERN = re.compile(r"(?:和|与|及|、|，|,|/|；|;)")
 _LEADING_FILLER_PATTERN = re.compile(

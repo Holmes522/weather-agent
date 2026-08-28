@@ -17,6 +17,13 @@ def test_parse_multiple_cities_in_text_order():
     assert result.day_offset == 1
 
 
+def test_parse_city_from_outdoor_activity_question():
+    result = parse_query("深圳明天适合跑步吗？")
+
+    assert result.location_terms == ("深圳",)
+    assert result.day_offset == 1
+
+
 def test_parse_tomorrow_without_city_for_follow_up_question():
     result = parse_query("那后天呢？")
 

@@ -33,7 +33,10 @@ def classify_intent(message: str, has_full_weather_offer: bool = False) -> str:
     normalized = re.sub(r"\s+", "", message)
     if has_full_weather_offer and is_full_weather_confirmation(normalized):
         return FULL
-    if re.search(r"出门|带什么|带伞|雨伞|穿什么|穿衣|怎么穿", normalized):
+    if re.search(
+        r"出门|带什么|带伞|雨伞|穿什么|穿衣|怎么穿|跑步|户外|运动",
+        normalized,
+    ):
         return OUTING
     if re.search(r"湿度|潮湿|干燥", normalized):
         return HUMIDITY

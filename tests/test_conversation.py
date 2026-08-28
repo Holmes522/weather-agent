@@ -13,6 +13,7 @@ def test_classifies_specific_weather_dimensions_before_full_weather():
 def test_classifies_outing_question_as_advice_instead_of_full_weather():
     assert classify_intent("深圳明天出门要带什么") == "outing"
     assert classify_intent("明天要带伞吗") == "outing"
+    assert classify_intent("深圳明天适合跑步吗") == "outing"
 
 
 def test_outing_answer_uses_rain_data_and_offers_full_weather():

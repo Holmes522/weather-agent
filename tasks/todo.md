@@ -11,8 +11,8 @@
 - [x] Task 9: 多城市提取、动态城市解析和纠错；验证：`pytest tests/test_parser.py tests/test_geocoding.py`
 - [x] Task 10: 意图化回复和多轮上下文；验证：`pytest tests/test_conversation.py tests/test_app.py`
 - [x] Task 11: 多城市 API/UI 展示；验证：完整测试与浏览器运行时检查
-- [ ] Task 12: OpenAI 兼容模型客户端；验证：`pytest tests/test_llm_client.py`
-- [ ] Task 13: 受限天气工具 Agent 编排；验证：`pytest tests/test_agent.py`
-- [ ] Task 14: `/chat` Agent 集成和有限会话历史；验证：`pytest tests/test_ai_chat.py`
-- [ ] Task 15: 本机模型配置接口和页面；验证：`pytest tests/test_llm_config.py`
-- [ ] Task 16: 文档、完整测试、安全审查和浏览器验证；验证：`pytest -q`
+- [x] Task 12: OpenAI 兼容模型客户端；验证：`pytest tests/test_llm_client.py`
+- [x] Task 13: 受限天气工具 Agent 编排；验证：`pytest tests/test_agent.py`
+- [x] Task 14: `/chat` Agent 集成、天气数据落地和有限会话历史；验证：`pytest tests/test_ai_chat.py`
+- [x] Task 15: 本机模型配置接口和页面；验证：`pytest tests/test_llm_config.py`
+- [x] Task 16: 文档、完整测试、安全审查和浏览器验证；验证：`pytest -q`
