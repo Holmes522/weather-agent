@@ -522,6 +522,19 @@ a:focus-visible {
   text-align: center;
 }
 
+.data-attribution {
+  padding: 8px 16px 10px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.data-attribution a {
+  color: var(--blue-deep);
+  text-underline-offset: 2px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

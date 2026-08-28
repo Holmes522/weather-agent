@@ -20,8 +20,11 @@
 ├── app.py
 ├── config.py
 ├── parser.py
+├── rate_limiter.py
 ├── session_store.py
 ├── weather_client.py
+├── wsgi.py
+├── render.yaml
 ├── templates/
 │   ├── index.html
 │   └── settings.html
@@ -31,6 +34,8 @@
 │   ├── settings.css
 │   └── styles.css
 ├── requirements.txt
+├── requirements-dev.txt
+├── DEPLOYMENT.md
 ├── .env.example
 ├── .gitignore
 ├── SPEC.md
@@ -43,6 +48,8 @@
     ├── test_parser.py
     ├── test_openmeteo_client.py
     ├── test_common_provider_clients.py
+    ├── test_deployment.py
+    ├── test_production.py
     ├── test_provider_config.py
     ├── test_qweather_client.py
     └── test_weather_client.py
@@ -57,8 +64,7 @@
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-$env:WEATHER_PROVIDER = "openmeteo"
+python -m pip install -r requirements-dev.txt
 python app.py
 ```
 
@@ -67,7 +73,7 @@ python app.py
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 $env:WEATHER_PROVIDER = "qweather"
 $env:QWEATHER_API_KEY = "你的和风天气 API Key"
 $env:QWEATHER_API_HOST = "控制台中的专属主机名.qweatherapi.com"
@@ -79,7 +85,7 @@ python app.py
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 export WEATHER_PROVIDER="qweather"
 export QWEATHER_API_KEY="你的和风天气 API Key"
 export QWEATHER_API_HOST="控制台中的专属主机名.qweatherapi.com"
@@ -99,6 +105,17 @@ python app.py
 点击聊天页右上角的“配置 API”，或直接打开 <http://127.0.0.1:5000/settings>，可以选择 OpenWeather、和风天气、WeatherAPI.com 或 Visual Crossing 并输入配置。Key 只发送到本机 Flask，保存在当前 Python 进程内存中，不写入浏览器、本地文件、日志或 Git；重启 Flask 后运行时配置会清空。配置页和配置接口只允许从 `127.0.0.1` 或 `::1` 访问。
 
 如果希望重启后仍自动加载 Provider，请继续使用环境变量方式配置。
+
+## 免费部署到 Render
+
+仓库根目录已经包含可直接使用的 `render.yaml`：默认创建 Render 免费 Web Service，以 Open-Meteo 作为无需 Key 的天气数据源，并使用 Gunicorn 启动生产服务。
+
+1. 登录 <https://dashboard.render.com/>；
+2. 选择 **New → Blueprint**；
+3. 连接 GitHub 仓库 `Holmes522/weather-agent`；
+4. 确认 Blueprint 并等待部署完成。
+
+生产环境会自动关闭 `/settings` 和 `/api/providers`，并对 `/chat` 启用每个客户端每分钟 30 次的内存限流。详细操作、验证和回滚步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ## 测试
 
@@ -162,6 +179,8 @@ python app.py
 
 - 会话状态只在当前 Python 进程内存中；重启服务或使用多进程部署后不会共享。生产化时可把 `InMemorySessionStore` 替换成 Redis 等实现。
 - 通过网页新增的 Provider 凭据同样只保存在当前进程内存中；配置页是本地开发功能，不应直接暴露到公网。
+- 当 `APP_ENV=production` 时，配置页和配置接口直接返回 404；天气凭据必须通过托管平台的环境变量设置。
+- 免费部署使用单 Worker，以保证当前内存会话和限流状态一致；扩容前应迁移到 Redis。
 - 城市使用白名单坐标，不接入自动地理编码；增加城市需修改 `parser.py`。
 - OpenWeatherMap 的“明天/后天”按 3 小时预报聚合；和风天气使用每日预报中的目标日期条目。
 - Open-Meteo 使用当前天气和每日预报变量；非商业 API 无需 Key，商业使用应遵循其许可和客户 API 要求。
@@ -178,4 +197,9 @@ python app.py
 - 和风天气每日预报 v1：<https://dev.qweather.com/docs/api/weather/weather-daily-forecast/>
 - 和风天气认证与 API Host：<https://dev.qweather.com/docs/configuration/authentication/>、<https://dev.qweather.com/docs/configuration/api-host/>
 - Flask Quickstart：<https://flask.palletsprojects.com/en/stable/quickstart/>
+- Flask 生产部署：<https://flask.palletsprojects.com/en/stable/deploying/>
+- Flask Gunicorn：<https://flask.palletsprojects.com/en/stable/deploying/gunicorn/>
+- Flask 反向代理配置：<https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/>
+- Render Flask 部署：<https://render.com/docs/deploy-flask>
+- Render Blueprint：<https://render.com/docs/blueprint-spec>
 - Requests Quickstart：<https://requests.readthedocs.io/en/latest/user/quickstart/>
