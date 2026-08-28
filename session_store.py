@@ -8,12 +8,19 @@ from parser import City
 
 
 @dataclass(frozen=True)
+class ConversationMessage:
+    role: str
+    content: str
+
+
+@dataclass(frozen=True)
 class ConversationContext:
     cities: Tuple[City, ...]
     day_offset: int = 0
     date_label: str = "今天"
     intent: str = "full"
     offered_full_weather: bool = False
+    messages: Tuple[ConversationMessage, ...] = ()
 
 
 class InMemorySessionStore:

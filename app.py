@@ -8,12 +8,17 @@ from uuid import uuid4
 from flask import Flask, abort, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from agent import AgentError, ChatModel, WeatherToolInput, run_agent
 from config import ConfigurationError, Settings
 from conversation import (
     BRIEF,
     FOLLOW_UP,
     FULL,
+    HUMIDITY,
     OUTING,
+    RAIN,
+    TEMPERATURE,
+    WIND,
     build_weather_answer,
     classify_intent,
 )
@@ -25,7 +30,12 @@ from geocoding import (
 )
 from parser import SUPPORTED_CITIES, parse_query
 from rate_limiter import InMemoryRateLimiter
-from session_store import ConversationContext, InMemorySessionStore
+from session_store import (
+    ConversationContext,
+    ConversationMessage,
+    InMemorySessionStore,
+)
+from llm_client import LLMClientError
 from weather_client import (
     OpenMeteoClient,
     OpenWeatherClient,
@@ -39,6 +49,7 @@ from weather_client import (
 
 
 MAX_MESSAGE_LENGTH = 200
+MAX_HISTORY_MESSAGES = 12
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 LOCAL_ADDRESSES = {"127.0.0.1", "::1"}
 PROVIDER_CATALOG = (
@@ -82,6 +93,7 @@ def create_app(
     weather_clients: Optional[Dict[str, WeatherProvider]] = None,
     default_provider: Optional[str] = None,
     city_resolver: Optional[CityResolver] = None,
+    llm_client: Optional[ChatModel] = None,
 ) -> Flask:
     """创建 Flask 应用；依赖可注入，便于脱离真实网络测试。"""
 
@@ -114,6 +126,8 @@ def create_app(
         timeout=effective_settings.request_timeout_seconds,
     )
     clients_lock = RLock()
+    llm_lock = RLock()
+    llm_state = {"client": llm_client}
     chat_rate_limiter = InMemoryRateLimiter(
         effective_settings.chat_rate_limit_per_minute
     )
@@ -297,14 +311,107 @@ def create_app(
                 "INVALID_SESSION", "session_id 只能包含字母、数字和 . _ : -。", 422
             )
 
-        parsed = parse_query(message)
         previous_context = store.get_context(session_id)
-        intent = classify_intent(
+
+        with llm_lock:
+            active_llm = llm_state["client"]
+        if active_llm is not None:
+            agent_tool_contexts = []
+
+            def execute_weather_tool(tool_input: WeatherToolInput):
+                payload, resolved = _execute_weather_tool(
+                    tool_input,
+                    selected_client,
+                    resolver,
+                )
+                agent_tool_contexts.append((tool_input, resolved))
+                return payload
+
+            history = [
+                {"role": item.role, "content": item.content}
+                for item in (previous_context.messages if previous_context else ())
+            ]
+            try:
+                agent_result = run_agent(
+                    client=active_llm,
+                    history=history,
+                    user_message=message,
+                    weather_tool=execute_weather_tool,
+                )
+            except CityNotFoundError as error:
+                return _error_response(
+                    "CITY_NOT_FOUND",
+                    f"没有找到“{error.location}”，请检查城市名称。",
+                    422,
+                )
+            except GeocodingError:
+                return _error_response(
+                    "LOCATION_UNAVAILABLE", "城市查询服务暂时不可用，请稍后重试。", 502
+                )
+            except WeatherClientError:
+                return _error_response(
+                    "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
+                )
+            except (LLMClientError, AgentError):
+                return _error_response(
+                    "AI_UNAVAILABLE", "AI 服务暂时不可用，请稍后重试。", 502
+                )
+
+            previous_messages = previous_context.messages if previous_context else ()
+            messages = (
+                *previous_messages,
+                ConversationMessage("user", message),
+                ConversationMessage("assistant", agent_result.answer),
+            )[-MAX_HISTORY_MESSAGES:]
+            if agent_tool_contexts:
+                last_input, last_resolutions = agent_tool_contexts[-1]
+                context = ConversationContext(
+                    cities=tuple(item.city for item in last_resolutions),
+                    day_offset=last_input.day_offset,
+                    date_label=_date_label(last_input.day_offset),
+                    intent=_intent_from_detail(last_input.detail),
+                    offered_full_weather=last_input.detail == "advice",
+                    messages=messages,
+                )
+            else:
+                context = ConversationContext(
+                    cities=previous_context.cities if previous_context else (),
+                    day_offset=previous_context.day_offset if previous_context else 0,
+                    date_label=previous_context.date_label if previous_context else "今天",
+                    intent=previous_context.intent if previous_context else BRIEF,
+                    offered_full_weather=False,
+                    messages=messages,
+                )
+            store.set_context(session_id, context)
+            return jsonify(
+                _agent_response_payload(
+                    session_id=session_id,
+                    provider=provider,
+                    model_name=active_llm.display_name,
+                    answer=agent_result.answer,
+                    tool_results=agent_result.tool_results,
+                    tool_inputs=agent_result.tool_inputs,
+                )
+            )
+
+        fallback_intent = classify_intent(
             message,
             has_full_weather_offer=bool(
                 previous_context and previous_context.offered_full_weather
             ),
         )
+        if (
+            not _looks_like_weather_request(message)
+            and fallback_intent not in {FULL, FOLLOW_UP}
+        ):
+            return _error_response(
+                "AI_NOT_CONFIGURED",
+                "AI 聊天模型尚未配置；请打开配置页面添加模型，天气查询仍可直接使用。",
+                422,
+            )
+
+        parsed = parse_query(message)
+        intent = fallback_intent
         if intent == FOLLOW_UP:
             intent = previous_context.intent if previous_context else BRIEF
 
@@ -386,6 +493,7 @@ def create_app(
                 date_label=date_label,
                 intent=intent,
                 offered_full_weather=intent == OUTING,
+                messages=previous_context.messages if previous_context else (),
             ),
         )
         first_result = weather_results[0]
@@ -405,6 +513,138 @@ def create_app(
         )
 
     return app
+
+
+class CityNotFoundError(Exception):
+    def __init__(self, location: str):
+        super().__init__("city not found")
+        self.location = location
+
+
+def _execute_weather_tool(
+    tool_input: WeatherToolInput,
+    weather_client: WeatherProvider,
+    resolver: CityResolver,
+):
+    resolutions = []
+    for location in tool_input.cities:
+        known_city = SUPPORTED_CITIES.get(location)
+        resolution = (
+            CityResolution(known_city)
+            if known_city is not None
+            else resolver.resolve(location)
+        )
+        if resolution is None:
+            raise CityNotFoundError(location)
+        resolutions.append(resolution)
+
+    date_label = _date_label(tool_input.day_offset)
+    intent = _intent_from_detail(tool_input.detail)
+    results = []
+    for resolution in resolutions:
+        weather = (
+            weather_client.get_current(resolution.city)
+            if tool_input.day_offset == 0
+            else weather_client.get_forecast(resolution.city, tool_input.day_offset)
+        )
+        advice = _build_advice(tool_input.day_offset, weather)
+        results.append(
+            {
+                "city": resolution.city.name,
+                "date": date_label,
+                "corrected_from": resolution.corrected_from,
+                "answer": build_weather_answer(
+                    resolution.city.name,
+                    date_label,
+                    weather,
+                    intent,
+                    corrected_from=resolution.corrected_from,
+                ),
+                "weather": _weather_payload(weather, advice),
+            }
+        )
+    return (
+        {
+            "cities": [item["city"] for item in results],
+            "date": date_label,
+            "detail": tool_input.detail,
+            "results": results,
+        },
+        resolutions,
+    )
+
+
+def _agent_response_payload(
+    session_id: str,
+    provider: str,
+    model_name: str,
+    answer: str,
+    tool_results,
+    tool_inputs,
+):
+    payload = {
+        "session_id": session_id,
+        "provider": provider,
+        "mode": "agent",
+        "model": model_name,
+        "tool_used": bool(tool_results),
+        "display_mode": "text",
+        "answer": answer,
+    }
+    if not tool_results:
+        return payload
+
+    weather_results = [
+        result
+        for tool_result in tool_results
+        for result in tool_result.get("results", [])
+        if isinstance(result, dict)
+    ]
+    if not weather_results:
+        return payload
+    first_result = weather_results[0]
+    last_input = tool_inputs[-1]
+    payload.update(
+        {
+            "city": first_result["city"],
+            "cities": [result["city"] for result in weather_results],
+            "date": first_result["date"],
+            "intent": _intent_from_detail(last_input.detail),
+            "display_mode": (
+                "weather_cards"
+                if any(item.detail == "full" for item in tool_inputs)
+                else "text"
+            ),
+            "weather": first_result["weather"],
+            "results": weather_results,
+        }
+    )
+    return payload
+
+
+def _intent_from_detail(detail: str) -> str:
+    return {
+        "full": FULL,
+        "temperature": TEMPERATURE,
+        "humidity": HUMIDITY,
+        "wind": WIND,
+        "rain": RAIN,
+        "advice": OUTING,
+        "brief": BRIEF,
+    }[detail]
+
+
+def _date_label(day_offset: int) -> str:
+    return ("今天", "明天", "后天")[day_offset]
+
+
+def _looks_like_weather_request(message: str) -> bool:
+    return bool(
+        re.search(
+            r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|冷不冷|热不热|今天|明天|后天",
+            message,
+        )
+    )
 
 
 def _build_weather_clients(settings: Settings) -> Dict[str, WeatherProvider]:
