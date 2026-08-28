@@ -183,3 +183,30 @@ def test_model_failure_is_hidden_from_user():
         "message": "AI 服务暂时不可用，请稍后重试。",
     }
     assert "secret model detail" not in response.get_data(as_text=True)
+
+
+def test_home_announces_when_ai_chat_is_enabled():
+    model = FakeLLMClient([AssistantTurn("unused")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=model,
+    )
+
+    html = app.test_client().get("/").get_data(as_text=True)
+
+    assert "AI 对话已开启" in html
+    assert "有什么想聊的？" in html
+    assert 'data-prompt="你好，你能做什么？"' in html
+
+
+def test_home_explains_weather_only_mode_without_ai_model():
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+    )
+
+    html = app.test_client().get("/").get_data(as_text=True)
+
+    assert "天气模式" in html
+    assert "配置 AI 后还能进行通用聊天" in html

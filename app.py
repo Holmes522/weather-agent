@@ -237,6 +237,7 @@ def create_app(
             ],
             default_provider=effective_default_provider,
             settings_enabled=not effective_settings.is_production,
+            llm_status=_llm_status(llm_state, llm_lock),
         )
 
     @app.get("/settings")

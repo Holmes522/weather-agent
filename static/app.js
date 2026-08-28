@@ -88,7 +88,9 @@
       card.appendChild(advice);
     }
 
-    card.appendChild(createElement("p", "weather-answer", payload.answer));
+    if (payload.mode !== "agent") {
+      card.appendChild(createElement("p", "weather-answer", payload.answer));
+    }
     item.appendChild(card);
     chatLog.appendChild(item);
     scrollToLatest();
@@ -106,6 +108,10 @@
     if (payload.display_mode === "text") {
       appendAgentText(payload.answer);
       return;
+    }
+
+    if (payload.mode === "agent") {
+      appendAgentText(payload.answer);
     }
 
     const results = Array.isArray(payload.results) && payload.results.length
@@ -139,7 +145,7 @@
 
   function appendLoading() {
     const item = createElement("li", "message message-agent loading-message");
-    item.setAttribute("aria-label", "正在查询天气");
+    item.setAttribute("aria-label", "Agent 正在思考");
     const bubble = createElement("div", "message-bubble typing-indicator");
     for (let index = 0; index < 3; index += 1) {
       bubble.appendChild(createElement("span"));
@@ -182,7 +188,7 @@
     input.disabled = value;
     sendButton.disabled = value;
     providerSelect.disabled = value;
-    sendButton.querySelector("span:first-child").textContent = value ? "查询中" : "发送";
+    sendButton.querySelector("span:first-child").textContent = value ? "思考中" : "发送";
   }
 
   async function sendMessage(message) {

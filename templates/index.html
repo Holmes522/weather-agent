@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="用自然语言查询今天、明天和后天的城市天气。">
-    <title>晴问 · 天气 Agent</title>
+    <meta name="description" content="能聊天、会调用真实天气数据的轻量 AI Agent。">
+    <title>晴问 · AI 天气 Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
@@ -14,17 +14,17 @@
           <span class="brand-mark" aria-hidden="true">晴</span>
           <span>
             <strong>晴问</strong>
-            <small>天气 Agent</small>
+            <small>AI 天气 Agent</small>
           </span>
         </a>
 
         <div class="topbar-actions">
           {% if settings_enabled %}
-          <a class="settings-link" href="/settings">配置 API</a>
+          <a class="settings-link" href="/settings">配置 Agent</a>
           {% endif %}
           <span class="service-status">
             <span class="status-dot" aria-hidden="true"></span>
-            服务已连接
+            {% if llm_status.configured %}AI 对话已开启{% else %}天气模式{% endif %}
           </span>
           <label class="provider-control" for="provider-select">
             <span>数据源</span>
@@ -37,14 +37,22 @@
         </div>
       </header>
 
-      <section class="chat-panel" aria-label="天气对话">
+      <section class="chat-panel" aria-label="AI 对话">
         <div class="welcome" id="welcome-panel">
-          <p class="eyebrow">自然语言天气查询</p>
+          <p class="eyebrow">轻量 AI · 专注天气</p>
+          {% if llm_status.configured %}
+          <h1>有什么想聊的？</h1>
+          <p class="welcome-copy">我可以正常聊天；遇到天气和出行问题时，会主动查询真实天气数据再回答。</p>
+          {% else %}
           <h1>今天，想查哪座城市？</h1>
-          <p class="welcome-copy">问一句就好，我会告诉你温度、天气、湿度、风速和出行建议。</p>
+          <p class="welcome-copy">当前可以免费查询天气；配置 AI 后还能进行通用聊天和更自然的出行建议。</p>
+          {% endif %}
           <div class="suggestions" aria-label="示例问题">
+            {% if llm_status.configured %}
+            <button type="button" class="suggestion" data-prompt="你好，你能做什么？">认识一下晴问</button>
+            {% endif %}
             <button type="button" class="suggestion" data-prompt="深圳和广州明天天气什么样？">深圳和广州明天天气</button>
-            <button type="button" class="suggestion" data-prompt="深圳明天出门要带什么？">深圳明天出门带什么</button>
+            <button type="button" class="suggestion" data-prompt="深圳明天适合跑步吗？">深圳明天适合跑步吗</button>
             <button type="button" class="suggestion" data-prompt="上海明天湿度如何？">上海明天湿度</button>
           </div>
         </div>
@@ -53,13 +61,13 @@
 
         <div class="composer-wrap">
           <form class="composer" id="chat-form">
-            <label class="sr-only" for="message-input">输入天气问题</label>
+            <label class="sr-only" for="message-input">输入消息</label>
             <textarea
               id="message-input"
               name="message"
               rows="1"
               maxlength="200"
-              placeholder="例如：杭州明天会下雨吗？"
+              placeholder="给晴问发消息…"
               autocomplete="off"
               required
             ></textarea>
@@ -68,7 +76,7 @@
               <span class="send-arrow" aria-hidden="true">↑</span>
             </button>
           </form>
-          <p class="composer-hint">按 Enter 发送 · Shift + Enter 换行 · 支持“那后天呢？”</p>
+          <p class="composer-hint">按 Enter 发送 · Shift + Enter 换行 · 天气数据来自所选数据源</p>
         </div>
       </section>
       <footer class="data-attribution">
