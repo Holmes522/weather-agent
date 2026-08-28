@@ -122,6 +122,18 @@ a:focus-visible {
   gap: 18px;
 }
 
+.settings-link {
+  color: var(--blue-deep);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .service-status {
   gap: 7px;
   color: var(--muted);
@@ -557,7 +569,8 @@ a:focus-visible {
   }
 
   .service-status,
-  .provider-control > span {
+  .provider-control > span,
+  .settings-link {
     display: none;
   }
 

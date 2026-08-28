@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="配置天气 Agent 使用的天气数据源。">
+    <title>配置天气 API · 晴问</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
+  </head>
+  <body class="settings-body">
+    <main class="settings-shell">
+      <header class="settings-header">
+        <a class="back-link" href="/">← 返回天气对话</a>
+        <div>
+          <p class="eyebrow">Provider 管理</p>
+          <h1>配置天气 API</h1>
+          <p>选择一个已适配的天气服务，把它加入聊天页的数据源列表。</p>
+        </div>
+      </header>
+
+      <div class="settings-layout">
+        <section class="provider-overview" aria-labelledby="provider-overview-title">
+          <div class="section-heading">
+            <h2 id="provider-overview-title">可用数据源</h2>
+            <span>{{ providers | length }} 个服务</span>
+          </div>
+          <ul class="provider-status-list" id="provider-status-list">
+            {% for provider in providers %}
+            <li class="provider-status-item{% if provider.configured %} is-configured{% endif %}" data-provider-status="{{ provider.id }}">
+              <span class="provider-initial" aria-hidden="true">{{ provider.name[0] }}</span>
+              <span class="provider-status-copy">
+                <strong>{{ provider.name }}</strong>
+                <small class="provider-state">{% if provider.configured %}已配置{% else %}未配置{% endif %}</small>
+              </span>
+              <span class="provider-check" aria-hidden="true">✓</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </section>
+
+        <section class="config-card" aria-labelledby="config-form-title">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">新增或更新</p>
+              <h2 id="config-form-title">连接天气服务</h2>
+            </div>
+          </div>
+
+          <form id="provider-config-form" class="provider-config-form">
+            <label for="provider-type">天气 API</label>
+            <select id="provider-type" name="provider" required>
+              <option value="" selected disabled>请选择天气服务</option>
+              {% for provider in configurable_providers %}
+              <option value="{{ provider.id }}">{{ provider.name }}</option>
+              {% endfor %}
+            </select>
+
+            <label for="provider-api-key">API Key</label>
+            <input
+              id="provider-api-key"
+              name="api_key"
+              type="password"
+              maxlength="512"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="粘贴该服务提供的 API Key"
+              required
+            >
+
+            <div class="conditional-field" id="qweather-host-field" hidden>
+              <label for="qweather-api-host">和风天气专属主机名</label>
+              <input
+                id="qweather-api-host"
+                name="api_host"
+                type="text"
+                maxlength="253"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="例如 abc123.qweatherapi.com"
+              >
+              <small>只填写主机名，不要包含 <code>https://</code> 或控制台路径。</small>
+            </div>
+
+            <p class="form-message" id="config-result" role="status" aria-live="polite"></p>
+
+            <button class="save-provider-button" id="save-provider-button" type="submit">
+              保存到当前进程
+            </button>
+          </form>
+
+          <aside class="privacy-note">
+            <strong>密钥如何保存？</strong>
+            <p>仅发送到本机 Flask，并保存在当前 Python 进程内存中。不会写入浏览器、文件、日志或 Git；重启服务后自动清空。</p>
+          </aside>
+        </section>
+      </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='settings.js') }}" defer></script>
+  </body>
+</html>

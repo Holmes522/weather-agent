@@ -34,3 +34,26 @@ def test_openmeteo_can_be_default_without_api_key(monkeypatch):
     assert settings.default_provider == "openmeteo"
     assert settings.api_key is None
     assert settings.qweather_api_key is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "environment_name", "settings_field"),
+    [
+        ("weatherapi", "WEATHERAPI_API_KEY", "weatherapi_api_key"),
+        (
+            "visualcrossing",
+            "VISUAL_CROSSING_API_KEY",
+            "visual_crossing_api_key",
+        ),
+    ],
+)
+def test_common_provider_can_be_selected_from_environment(
+    monkeypatch, provider, environment_name, settings_field
+):
+    monkeypatch.setenv("WEATHER_PROVIDER", provider)
+    monkeypatch.setenv(environment_name, "provider-key")
+
+    settings = Settings.from_env()
+
+    assert settings.default_provider == provider
+    assert getattr(settings, settings_field) == "provider-key"

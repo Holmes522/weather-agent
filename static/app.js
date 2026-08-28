@@ -129,6 +129,8 @@
       qweather: "和风天气",
       openweather: "OpenWeather",
       openmeteo: "Open-Meteo",
+      weatherapi: "WeatherAPI.com",
+      visualcrossing: "Visual Crossing",
     };
     return names[provider] || provider;
   }

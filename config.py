@@ -16,18 +16,30 @@ class Settings:
     default_provider: str = "openweather"
     qweather_api_key: Optional[str] = None
     qweather_api_host: Optional[str] = None
+    weatherapi_api_key: Optional[str] = None
+    visual_crossing_api_key: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "Settings":
         default_provider = os.getenv("WEATHER_PROVIDER", "openweather").strip().lower()
-        if default_provider not in {"openweather", "qweather", "openmeteo"}:
+        if default_provider not in {
+            "openweather",
+            "qweather",
+            "openmeteo",
+            "weatherapi",
+            "visualcrossing",
+        }:
             raise ConfigurationError(
-                "WEATHER_PROVIDER must be openweather, qweather or openmeteo"
+                "WEATHER_PROVIDER is not a supported provider"
             )
 
         openweather_api_key = os.getenv("OPENWEATHER_API_KEY", "").strip() or None
         qweather_api_key = os.getenv("QWEATHER_API_KEY", "").strip() or None
         qweather_api_host = os.getenv("QWEATHER_API_HOST", "").strip() or None
+        weatherapi_api_key = os.getenv("WEATHERAPI_API_KEY", "").strip() or None
+        visual_crossing_api_key = (
+            os.getenv("VISUAL_CROSSING_API_KEY", "").strip() or None
+        )
 
         if default_provider == "openweather" and not openweather_api_key:
             raise ConfigurationError(
@@ -39,10 +51,20 @@ class Settings:
             raise ConfigurationError(
                 "QWEATHER_API_KEY and QWEATHER_API_HOST must both be configured"
             )
+        if default_provider == "weatherapi" and not weatherapi_api_key:
+            raise ConfigurationError(
+                "WEATHERAPI_API_KEY environment variable is not configured"
+            )
+        if default_provider == "visualcrossing" and not visual_crossing_api_key:
+            raise ConfigurationError(
+                "VISUAL_CROSSING_API_KEY environment variable is not configured"
+            )
 
         return cls(
             api_key=openweather_api_key,
             default_provider=default_provider,
             qweather_api_key=qweather_api_key,
             qweather_api_host=qweather_api_host,
+            weatherapi_api_key=weatherapi_api_key,
+            visual_crossing_api_key=visual_crossing_api_key,
         )

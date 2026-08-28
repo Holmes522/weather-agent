@@ -1,6 +1,7 @@
 """天气查询 Agent 的 Flask REST API。"""
 
 import re
+from threading import RLock
 from typing import Dict, Optional
 from uuid import uuid4
 
@@ -13,6 +14,8 @@ from weather_client import (
     OpenMeteoClient,
     OpenWeatherClient,
     QWeatherClient,
+    VisualCrossingClient,
+    WeatherApiClient,
     WeatherClientError,
     WeatherData,
     WeatherProvider,
@@ -21,6 +24,39 @@ from weather_client import (
 
 MAX_MESSAGE_LENGTH = 200
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+LOCAL_ADDRESSES = {"127.0.0.1", "::1"}
+PROVIDER_CATALOG = (
+    {
+        "id": "openmeteo",
+        "name": "Open-Meteo",
+        "required_fields": [],
+        "configurable": False,
+    },
+    {
+        "id": "openweather",
+        "name": "OpenWeather",
+        "required_fields": ["api_key"],
+        "configurable": True,
+    },
+    {
+        "id": "qweather",
+        "name": "和风天气",
+        "required_fields": ["api_key", "api_host"],
+        "configurable": True,
+    },
+    {
+        "id": "weatherapi",
+        "name": "WeatherAPI.com",
+        "required_fields": ["api_key"],
+        "configurable": True,
+    },
+    {
+        "id": "visualcrossing",
+        "name": "Visual Crossing",
+        "required_fields": ["api_key"],
+        "configurable": True,
+    },
+)
 
 
 def create_app(
@@ -53,6 +89,7 @@ def create_app(
             f"Default weather provider is not configured: {effective_default_provider}"
         )
     store = session_store or InMemorySessionStore()
+    clients_lock = RLock()
 
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
@@ -83,25 +120,82 @@ def create_app(
     def index():
         """渲染不暴露天气服务密钥的同源聊天界面。"""
 
-        provider_labels = {
-            "qweather": "和风天气",
-            "openweather": "OpenWeather",
-            "openmeteo": "Open-Meteo",
-        }
-        ordered_providers = sorted(
-            clients,
-            key=lambda provider_name: provider_name != effective_default_provider,
-        )
+        with clients_lock:
+            ordered_providers = sorted(
+                clients,
+                key=lambda provider_name: provider_name
+                != effective_default_provider,
+            )
         return render_template(
             "index.html",
             providers=[
                 {
                     "value": provider_name,
-                    "label": provider_labels.get(provider_name, provider_name),
+                    "label": _provider_name(provider_name),
                 }
                 for provider_name in ordered_providers
             ],
             default_provider=effective_default_provider,
+        )
+
+    @app.get("/settings")
+    def provider_settings():
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+        return render_template(
+            "settings.html",
+            providers=_provider_statuses(clients, clients_lock),
+            configurable_providers=[
+                provider for provider in PROVIDER_CATALOG if provider["configurable"]
+            ],
+        )
+
+    @app.get("/api/providers")
+    def provider_status():
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+        return jsonify({"providers": _provider_statuses(clients, clients_lock)})
+
+    @app.post("/api/providers")
+    def configure_provider():
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return _error_response("INVALID_JSON", "请求必须是 JSON 对象。", 400)
+
+        provider_name = body.get("provider")
+        try:
+            client = _build_runtime_provider(
+                provider_name,
+                body,
+                timeout=(settings or Settings()).request_timeout_seconds,
+            )
+        except (TypeError, ValueError):
+            return _error_response(
+                "INVALID_PROVIDER_CONFIG",
+                "配置不完整或格式不正确，请检查后重试。",
+                422,
+            )
+
+        with clients_lock:
+            was_configured = provider_name in clients
+            clients[provider_name] = client
+        return (
+            jsonify(
+                {
+                    "provider": {
+                        "id": provider_name,
+                        "name": _provider_name(provider_name),
+                        "configured": True,
+                    }
+                }
+            ),
+            200 if was_configured else 201,
         )
 
     @app.errorhandler(413)
@@ -126,12 +220,14 @@ def create_app(
             return _error_response("MESSAGE_TOO_LONG", "问题长度不能超过 200 个字符。", 422)
 
         provider = body.get("provider", effective_default_provider)
-        if not isinstance(provider, str) or provider not in clients:
-            available = "、".join(sorted(clients))
+        with clients_lock:
+            available_providers = tuple(sorted(clients))
+            selected_client = clients.get(provider) if isinstance(provider, str) else None
+        if selected_client is None:
+            available = "、".join(available_providers)
             return _error_response(
                 "INVALID_PROVIDER", f"不支持该天气服务，可选值：{available}。", 422
             )
-        selected_client = clients[provider]
 
         session_id = body.get("session_id")
         if session_id is None:
@@ -195,7 +291,73 @@ def _build_weather_clients(settings: Settings) -> Dict[str, WeatherProvider]:
             settings.qweather_api_host,
             timeout=settings.request_timeout_seconds,
         )
+    if settings.weatherapi_api_key:
+        clients["weatherapi"] = WeatherApiClient(
+            settings.weatherapi_api_key,
+            timeout=settings.request_timeout_seconds,
+        )
+    if settings.visual_crossing_api_key:
+        clients["visualcrossing"] = VisualCrossingClient(
+            settings.visual_crossing_api_key,
+            timeout=settings.request_timeout_seconds,
+        )
     return clients
+
+
+def _provider_name(provider_id: str) -> str:
+    for provider in PROVIDER_CATALOG:
+        if provider["id"] == provider_id:
+            return provider["name"]
+    return provider_id
+
+
+def _provider_statuses(clients: Dict[str, WeatherProvider], lock: RLock):
+    with lock:
+        configured = set(clients)
+    return [
+        {
+            "id": provider["id"],
+            "name": provider["name"],
+            "configured": provider["id"] in configured,
+            "required_fields": provider["required_fields"],
+        }
+        for provider in PROVIDER_CATALOG
+    ]
+
+
+def _require_local_request():
+    if request.remote_addr not in LOCAL_ADDRESSES:
+        return _error_response(
+            "LOCAL_ACCESS_REQUIRED", "API 配置仅允许在本机访问。", 403
+        )
+    return None
+
+
+def _build_runtime_provider(
+    provider_name: object,
+    body: Dict[str, object],
+    timeout,
+) -> WeatherProvider:
+    api_key = body.get("api_key")
+    if (
+        provider_name not in {"openweather", "qweather", "weatherapi", "visualcrossing"}
+        or not isinstance(api_key, str)
+        or not api_key.strip()
+        or len(api_key.strip()) > 512
+    ):
+        raise ValueError("invalid provider configuration")
+
+    if provider_name == "openweather":
+        return OpenWeatherClient(api_key, timeout=timeout)
+    if provider_name == "weatherapi":
+        return WeatherApiClient(api_key, timeout=timeout)
+    if provider_name == "visualcrossing":
+        return VisualCrossingClient(api_key, timeout=timeout)
+
+    api_host = body.get("api_host")
+    if not isinstance(api_host, str):
+        raise ValueError("QWeather API host is required")
+    return QWeatherClient(api_key, api_host, timeout=timeout)
 
 
 def _error_response(code: str, message: str, status_code: int):
