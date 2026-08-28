@@ -87,3 +87,17 @@ def test_anonymous_history_cookie_is_http_only_and_same_site():
     assert "SameSite=Lax" in cookie
     assert "Path=/" in cookie
     assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_home_renders_accessible_conversation_history_controls():
+    html = build_app().test_client().get("/").get_data(as_text=True)
+
+    assert 'id="conversation-sidebar"' in html
+    assert 'id="new-conversation-button"' in html
+    assert 'id="conversation-list"' in html
+    assert 'id="sidebar-toggle"' in html
+    assert 'aria-controls="conversation-sidebar"' in html
+    assert 'aria-expanded="false"' in html
+    assert 'id="current-conversation-title"' in html
+    assert "新建对话" in html
+    assert "历史对话" in html

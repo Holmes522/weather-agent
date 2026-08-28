@@ -9,7 +9,8 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="topbar">
+      <aside class="conversation-sidebar" id="conversation-sidebar" aria-label="对话导航">
+        <div class="sidebar-header">
         <a class="brand" href="/" aria-label="晴问天气 Agent 首页">
           <span class="brand-mark" aria-hidden="true">晴</span>
           <span>
@@ -18,10 +19,55 @@
           </span>
         </a>
 
-        <div class="topbar-actions">
+          <button class="new-conversation-button" id="new-conversation-button" type="button">
+            <span aria-hidden="true">＋</span>
+            <span>新建对话</span>
+          </button>
+        </div>
+
+        <nav class="history-nav" aria-labelledby="history-heading">
+          <div class="history-heading-row">
+            <h2 id="history-heading">历史对话</h2>
+            <span id="conversation-count" aria-label="对话数量">0</span>
+          </div>
+          <ol class="conversation-list" id="conversation-list" aria-live="polite"></ol>
+          <p class="history-empty" id="history-empty">还没有历史对话</p>
+        </nav>
+
+        <div class="sidebar-footer">
           {% if settings_enabled %}
-          <a class="settings-link" href="/settings">配置 Agent</a>
+          <a class="settings-link sidebar-settings-link" href="/settings">配置 Agent</a>
           {% endif %}
+          <p>历史保存在当前服务进程中，重启后会清空。</p>
+        </div>
+      </aside>
+
+      <button
+        class="sidebar-backdrop"
+        id="sidebar-backdrop"
+        type="button"
+        aria-label="关闭历史对话栏"
+        tabindex="-1"
+      ></button>
+
+      <section class="app-workspace">
+        <header class="topbar">
+          <div class="conversation-heading">
+            <button
+              class="sidebar-toggle"
+              id="sidebar-toggle"
+              type="button"
+              aria-label="打开历史对话栏"
+              aria-controls="conversation-sidebar"
+              aria-expanded="false"
+            >☰</button>
+            <div>
+              <span>当前对话</span>
+              <strong id="current-conversation-title">新对话</strong>
+            </div>
+          </div>
+
+        <div class="topbar-actions">
           <span class="service-status">
             <span class="status-dot" aria-hidden="true"></span>
             {% if llm_status.configured %}AI 对话已开启{% else %}天气模式{% endif %}
@@ -35,9 +81,9 @@
             </select>
           </label>
         </div>
-      </header>
+        </header>
 
-      <section class="chat-panel" aria-label="AI 对话">
+        <section class="chat-panel" aria-label="AI 对话">
         <div class="welcome" id="welcome-panel">
           <p class="eyebrow">轻量 AI · 专注天气</p>
           {% if llm_status.configured %}
@@ -78,13 +124,14 @@
           </form>
           <p class="composer-hint">按 Enter 发送 · Shift + Enter 换行 · 天气数据来自所选数据源</p>
         </div>
+        </section>
+        <footer class="data-attribution">
+          默认免费天气数据由
+          <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>
+          提供 · 城市搜索数据 ©
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>
+        </footer>
       </section>
-      <footer class="data-attribution">
-        默认免费天气数据由
-        <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>
-        提供 · 城市搜索数据 ©
-        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>
-      </footer>
     </main>
 
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>

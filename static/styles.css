@@ -53,16 +53,227 @@ a:focus-visible {
 }
 
 .app-shell {
-  width: min(1080px, calc(100% - 32px));
-  min-height: calc(100dvh - 40px);
+  width: min(1240px, calc(100% - 32px));
+  height: calc(100dvh - 40px);
+  min-height: 620px;
   margin: 20px auto;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: 270px minmax(0, 1fr);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(188, 204, 220, 0.75);
   border-radius: 24px;
   box-shadow: var(--shadow);
+}
+
+.conversation-sidebar {
+  min-height: 0;
+  padding: 18px 14px 14px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  background: #f4f8fa;
+  border-right: 1px solid var(--line);
+}
+
+.sidebar-header {
+  display: grid;
+  gap: 20px;
+  padding: 0 4px;
+}
+
+.new-conversation-button {
+  min-height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #ffffff;
+  background: var(--blue-deep);
+  border: 1px solid var(--blue-deep);
+  border-radius: 11px;
+  font-weight: 750;
+}
+
+.new-conversation-button:hover:not(:disabled) {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+
+.new-conversation-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.new-conversation-button span:first-child {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.history-nav {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+}
+
+.history-heading-row {
+  padding: 0 8px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-heading-row h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.history-heading-row span {
+  min-width: 24px;
+  padding: 2px 7px;
+  color: var(--muted);
+  background: #e7eef2;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.conversation-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.conversation-item {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 10px;
+}
+
+.conversation-item:hover,
+.conversation-item.is-active {
+  background: #e6f0f4;
+}
+
+.conversation-item.is-active {
+  box-shadow: inset 3px 0 var(--blue);
+}
+
+.conversation-select,
+.conversation-delete {
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.conversation-select {
+  min-width: 0;
+  padding: 10px 4px 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.conversation-title,
+.conversation-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-title {
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.conversation-meta {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.conversation-delete {
+  min-width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 8px;
+  font-size: 1.1rem;
+  opacity: 0;
+}
+
+.conversation-delete.is-confirming {
+  width: 42px;
+  margin-right: 3px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+  opacity: 1;
+}
+
+.conversation-item:hover .conversation-delete,
+.conversation-item:focus-within .conversation-delete,
+.conversation-item.is-active .conversation-delete {
+  opacity: 1;
+}
+
+.conversation-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.history-empty {
+  margin: 20px 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.history-empty[hidden] {
+  display: none;
+}
+
+.sidebar-footer {
+  padding: 14px 8px 2px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-settings-link {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.sidebar-footer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.55;
+}
+
+.sidebar-backdrop,
+.sidebar-toggle {
+  display: none;
+}
+
+.app-workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .topbar {
@@ -73,6 +284,36 @@ a:focus-visible {
   justify-content: space-between;
   gap: 24px;
   border-bottom: 1px solid var(--line);
+}
+
+.conversation-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conversation-heading > div {
+  min-width: 0;
+}
+
+.conversation-heading span,
+.conversation-heading strong {
+  display: block;
+}
+
+.conversation-heading span {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.conversation-heading strong {
+  max-width: min(34vw, 360px);
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand {
@@ -571,9 +812,55 @@ a:focus-visible {
   }
 }
 
+@media (max-width: 840px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .conversation-sidebar {
+    position: fixed;
+    z-index: 30;
+    inset: 0 auto 0 0;
+    width: min(84vw, 300px);
+    transform: translateX(-102%);
+    box-shadow: 18px 0 45px rgba(16, 42, 67, 0.18);
+    transition: transform 180ms ease;
+  }
+
+  .conversation-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-toggle {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    color: var(--ink);
+    background: #f3f7fa;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(16, 42, 67, 0.28);
+    border: 0;
+  }
+
+  .sidebar-backdrop.is-visible {
+    display: block;
+  }
+}
+
 @media (max-width: 680px) {
   .app-shell {
     width: 100%;
+    height: 100dvh;
     min-height: 100dvh;
     margin: 0;
     border: 0;
@@ -586,9 +873,24 @@ a:focus-visible {
   }
 
   .service-status,
-  .provider-control > span,
-  .settings-link {
+  .provider-control > span {
     display: none;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .provider-control select {
+    width: min(38vw, 140px);
+  }
+
+  .conversation-heading span {
+    display: none;
+  }
+
+  .conversation-heading strong {
+    max-width: 34vw;
   }
 
   .welcome {
