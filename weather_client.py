@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 import requests
 
@@ -68,6 +68,7 @@ class OpenMeteoClient:
         "precipitation_probability_max",
         "precipitation_sum",
     )
+    MAX_BATCH_LOCATIONS = 64
 
     def __init__(
         self,
@@ -85,6 +86,31 @@ class OpenMeteoClient:
                 "wind_speed_unit": "ms",
             },
         )
+        return self._normalize_current(payload)
+
+    def get_current_many(self, cities: Sequence[City]) -> Tuple[WeatherData, ...]:
+        """使用 Open-Meteo 官方多坐标格式批量查询当前天气。"""
+
+        normalized_cities = tuple(cities)
+        if not 1 <= len(normalized_cities) <= self.MAX_BATCH_LOCATIONS:
+            raise ValueError("Open-Meteo batch must contain 1 to 64 locations")
+        params = {
+            "latitude": ",".join(f"{city.latitude:.4f}" for city in normalized_cities),
+            "longitude": ",".join(f"{city.longitude:.4f}" for city in normalized_cities),
+            "current": ",".join(self.CURRENT_FIELDS),
+            "wind_speed_unit": "ms",
+        }
+        payload = self._request_payload(params)
+        if not isinstance(payload, list) or len(payload) != len(normalized_cities):
+            raise WeatherDataError(
+                "Open-Meteo multi-location response count is invalid"
+            )
+        return tuple(self._normalize_current(item) for item in payload)
+
+    @staticmethod
+    def _normalize_current(payload: Any) -> WeatherData:
+        if not isinstance(payload, dict):
+            raise WeatherDataError("Open-Meteo location response must be an object")
         current = _dict_field(payload, "current")
         code = _wmo_code(current.get("weather_code"))
         precipitation = _non_negative_number(
@@ -170,6 +196,12 @@ class OpenMeteoClient:
             "longitude": city.longitude,
             **provider_params,
         }
+        payload = self._request_payload(params)
+        if not isinstance(payload, dict):
+            raise WeatherDataError("Open-Meteo response must be an object")
+        return payload
+
+    def _request_payload(self, params: Dict[str, Any]) -> Any:
         try:
             response = self._request_get(
                 url=self.BASE_URL,
@@ -180,9 +212,6 @@ class OpenMeteoClient:
             payload = response.json()
         except (requests.RequestException, TimeoutError, ValueError) as exc:
             raise WeatherUpstreamError("Open-Meteo request failed") from exc
-
-        if not isinstance(payload, dict):
-            raise WeatherDataError("Open-Meteo response must be an object")
         return payload
 
 

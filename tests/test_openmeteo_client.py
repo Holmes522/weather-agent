@@ -114,3 +114,67 @@ def test_openmeteo_wraps_network_errors():
 
     with pytest.raises(WeatherUpstreamError):
         client.get_current(city)
+
+
+def test_openmeteo_current_many_uses_one_multi_coordinate_request():
+    cities = (
+        parse_query("北京天气").city,
+        parse_query("上海天气").city,
+    )
+    response = FakeResponse(
+        [
+            {
+                "current": {
+                    "temperature_2m": 20,
+                    "relative_humidity_2m": 60,
+                    "weather_code": 95,
+                    "wind_speed_10m": 3,
+                    "precipitation": 1.2,
+                }
+            },
+            {
+                "current": {
+                    "temperature_2m": 25,
+                    "relative_humidity_2m": 50,
+                    "weather_code": 0,
+                    "wind_speed_10m": 2,
+                    "precipitation": 0,
+                }
+            },
+        ]
+    )
+    calls = []
+
+    def fake_get(**kwargs):
+        calls.append(kwargs)
+        return response
+
+    results = OpenMeteoClient(request_get=fake_get).get_current_many(cities)
+
+    assert [result.condition for result in results] == ["雷雨", "晴"]
+    assert calls[0]["params"]["latitude"] == "39.9042,31.2304"
+    assert calls[0]["params"]["longitude"] == "116.4074,121.4737"
+    assert len(calls) == 1
+
+
+def test_openmeteo_current_many_rejects_a_response_with_wrong_item_count():
+    cities = (
+        parse_query("北京天气").city,
+        parse_query("上海天气").city,
+    )
+    response = FakeResponse(
+        [
+            {
+                "current": {
+                    "temperature_2m": 20,
+                    "relative_humidity_2m": 60,
+                    "weather_code": 0,
+                    "wind_speed_10m": 3,
+                    "precipitation": 0,
+                }
+            }
+        ]
+    )
+
+    with pytest.raises(WeatherDataError):
+        OpenMeteoClient(request_get=lambda **kwargs: response).get_current_many(cities)
