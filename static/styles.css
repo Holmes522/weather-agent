@@ -437,6 +437,7 @@ a:focus-visible {
 }
 
 .welcome {
+  grid-row: 1;
   padding: clamp(42px, 8vh, 76px) 24px 26px;
   text-align: center;
 }
@@ -492,6 +493,7 @@ a:focus-visible {
 }
 
 .chat-log {
+  grid-row: 2;
   min-height: 0;
   margin: 0;
   padding: 28px clamp(18px, 6vw, 72px);
@@ -713,9 +715,9 @@ a:focus-visible {
 }
 
 .composer-wrap {
+  grid-row: 3;
   position: relative;
   z-index: 2;
-  flex: 0 0 auto;
   padding: 16px clamp(18px, 6vw, 72px) 20px;
   background: rgba(255, 255, 255, 0.97);
   border-top: 1px solid var(--line);

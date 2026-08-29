@@ -132,4 +132,6 @@ def test_chat_layout_keeps_the_composer_at_the_bottom_for_short_conversations():
 
     assert "grid-template-rows: auto minmax(0, 1fr) auto;" in source
     assert ".chat-panel {" in source and "overflow: hidden;" in source
-    assert ".chat-log {\n  min-height: 0;" in source
+    assert ".welcome {\n  grid-row: 1;" in source
+    assert ".chat-log {\n  grid-row: 2;\n  min-height: 0;" in source
+    assert ".composer-wrap {\n  grid-row: 3;" in source
