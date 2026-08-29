@@ -5,11 +5,17 @@ from threading import RLock
 from typing import Dict, Optional
 from uuid import uuid4
 
-from flask import Flask, abort, g, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from agent import AgentError, ChatModel, WeatherToolInput, run_agent
 from config import ConfigurationError, Settings
+from conversation_history import (
+    ensure_conversation_for_request,
+    is_valid_session_id,
+    record_visible_exchange_for_request,
+    register_conversation_history,
+)
 from conversation import (
     BRIEF,
     FOLLOW_UP,
@@ -34,7 +40,6 @@ from session_store import (
     ConversationContext,
     ConversationMessage,
     InMemorySessionStore,
-    StoredConversation,
 )
 from llm_client import LLMClientError, OpenAICompatibleClient
 from weather_client import (
@@ -51,10 +56,6 @@ from weather_client import (
 
 MAX_MESSAGE_LENGTH = 200
 MAX_HISTORY_MESSAGES = 12
-SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
-ANONYMOUS_USER_PATTERN = re.compile(r"^[a-f0-9]{32}$")
-ANONYMOUS_USER_COOKIE = "weather_agent_user"
-ANONYMOUS_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 LOCAL_ADDRESSES = {"127.0.0.1", "::1"}
 PROVIDER_CATALOG = (
     {
@@ -185,18 +186,9 @@ def create_app(
     if effective_settings.is_production:
         # Render 等托管平台位于一层反向代理之后；只在生产模式信任这一层。
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-
-    @app.before_request
-    def identify_anonymous_browser():
-        """用不可被脚本读取的随机 Cookie 区分同一设备上的匿名历史。"""
-
-        cookie_value = request.cookies.get(ANONYMOUS_USER_COOKIE, "")
-        g.has_anonymous_cookie = bool(
-            ANONYMOUS_USER_PATTERN.fullmatch(cookie_value)
-        )
-        g.anonymous_user_id = (
-            cookie_value if g.has_anonymous_cookie else uuid4().hex
-        )
+    register_conversation_history(
+        app, store, is_production=effective_settings.is_production
+    )
 
     @app.after_request
     def add_security_headers(response):
@@ -218,21 +210,9 @@ def create_app(
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
-        if request.path.startswith("/api/conversations"):
-            response.headers["Cache-Control"] = "no-store"
         if effective_settings.is_production:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
-            )
-        if not g.get("has_anonymous_cookie", False):
-            response.set_cookie(
-                ANONYMOUS_USER_COOKIE,
-                g.anonymous_user_id,
-                max_age=ANONYMOUS_COOKIE_MAX_AGE,
-                secure=effective_settings.is_production,
-                httponly=True,
-                samesite="Lax",
-                path="/",
             )
         return response
 
@@ -372,52 +352,6 @@ def create_app(
             200 if was_configured else 201,
         )
 
-    @app.get("/api/conversations")
-    def list_conversations():
-        conversations = store.list_conversations(g.anonymous_user_id)
-        return jsonify(
-            {
-                "conversations": [
-                    _conversation_summary_payload(item) for item in conversations
-                ]
-            }
-        )
-
-    @app.post("/api/conversations")
-    def create_conversation():
-        session_id = f"web-{uuid4()}"
-        conversation = store.create_conversation(
-            g.anonymous_user_id, session_id
-        )
-        return (
-            jsonify(
-                {"conversation": _conversation_detail_payload(conversation)}
-            ),
-            201,
-        )
-
-    @app.get("/api/conversations/<session_id>")
-    def get_conversation(session_id: str):
-        invalid = _validate_session_id(session_id)
-        if invalid is not None:
-            return invalid
-        conversation = store.get_conversation(g.anonymous_user_id, session_id)
-        if conversation is None:
-            return _error_response(
-                "CONVERSATION_NOT_FOUND", "没有找到该对话。", 404
-            )
-        return jsonify(
-            {"conversation": _conversation_detail_payload(conversation)}
-        )
-
-    @app.delete("/api/conversations/<session_id>")
-    def delete_conversation(session_id: str):
-        invalid = _validate_session_id(session_id)
-        if invalid is not None:
-            return invalid
-        store.delete_conversation(g.anonymous_user_id, session_id)
-        return "", 204
-
     @app.errorhandler(413)
     def payload_too_large(_error):
         return _error_response(
@@ -463,18 +397,15 @@ def create_app(
         session_id = body.get("session_id")
         if session_id is None:
             session_id = uuid4().hex
-        elif not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+        elif not isinstance(session_id, str) or not is_valid_session_id(session_id):
             return _error_response(
                 "INVALID_SESSION", "session_id 只能包含字母、数字和 . _ : -。", 422
             )
 
-        if g.has_anonymous_cookie:
-            try:
-                store.create_conversation(g.anonymous_user_id, session_id)
-            except ValueError:
-                return _error_response(
-                    "CONVERSATION_NOT_FOUND", "没有找到该对话。", 404
-                )
+        if not ensure_conversation_for_request(store, session_id):
+            return _error_response(
+                "CONVERSATION_NOT_FOUND", "没有找到该对话。", 404
+            )
 
         previous_context = store.get_context(session_id)
         grounding_required = _requires_weather_grounding(message, previous_context)
@@ -562,13 +493,11 @@ def create_app(
                     tool_results=agent_result.tool_results,
                     tool_inputs=agent_result.tool_inputs,
                 )
-                _record_visible_exchange(
+                record_visible_exchange_for_request(
                     store,
-                    g.anonymous_user_id,
                     session_id,
                     message,
                     response_payload,
-                    enabled=g.has_anonymous_cookie,
                 )
                 return jsonify(response_payload)
 
@@ -687,13 +616,11 @@ def create_app(
             "weather": first_result["weather"],
             "results": weather_results,
         }
-        _record_visible_exchange(
+        record_visible_exchange_for_request(
             store,
-            g.anonymous_user_id,
             session_id,
             message,
             response_payload,
-            enabled=g.has_anonymous_cookie,
         )
         return jsonify(response_payload)
 
@@ -902,61 +829,6 @@ def _provider_statuses(clients: Dict[str, WeatherProvider], lock: RLock):
         }
         for provider in PROVIDER_CATALOG
     ]
-
-
-def _validate_session_id(session_id: str):
-    if not SESSION_ID_PATTERN.fullmatch(session_id):
-        return _error_response(
-            "INVALID_SESSION",
-            "session_id 只能包含字母、数字和 . _ : -。",
-            422,
-        )
-    return None
-
-
-def _conversation_summary_payload(conversation: StoredConversation):
-    return {
-        "id": conversation.session_id,
-        "title": conversation.title,
-        "created_at": conversation.created_at.isoformat(),
-        "updated_at": conversation.updated_at.isoformat(),
-        "message_count": len(conversation.messages),
-    }
-
-
-def _conversation_detail_payload(conversation: StoredConversation):
-    payload = _conversation_summary_payload(conversation)
-    payload["messages"] = [
-        {
-            "role": message.role,
-            "content": message.content,
-            **({"payload": message.payload} if message.payload is not None else {}),
-        }
-        for message in conversation.messages
-    ]
-    return payload
-
-
-def _record_visible_exchange(
-    store: InMemorySessionStore,
-    owner_id: str,
-    session_id: str,
-    user_message: str,
-    response_payload: Dict[str, object],
-    enabled: bool,
-) -> None:
-    if not enabled:
-        return
-    answer = response_payload.get("answer")
-    if not isinstance(answer, str):
-        return
-    store.record_exchange(
-        owner_id,
-        session_id,
-        user_message,
-        answer,
-        response_payload,
-    )
 
 
 def _llm_status(llm_state, lock: RLock):

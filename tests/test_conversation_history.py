@@ -58,6 +58,20 @@ def test_conversation_history_is_isolated_by_anonymous_browser_cookie():
     }
 
 
+def test_cookie_less_chat_cannot_reuse_a_browser_managed_session():
+    app = build_app()
+    browser = app.test_client()
+    session_id = browser.post("/api/conversations").get_json()["conversation"]["id"]
+    api_client_without_cookies = app.test_client(use_cookies=False)
+
+    response = api_client_without_cookies.post(
+        "/chat", json={"message": "那明天呢？", "session_id": session_id}
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "CONVERSATION_NOT_FOUND"
+
+
 def test_delete_conversation_is_idempotent_and_removes_history():
     http = build_app().test_client()
     session_id = http.post("/api/conversations").get_json()["conversation"]["id"]

@@ -43,11 +43,17 @@ class StoredConversation:
 
 
 class InMemorySessionStore:
-    def __init__(self, max_sessions: int = 10_000, max_messages: int = 100):
+    def __init__(
+        self,
+        max_sessions: int = 10_000,
+        max_messages: int = 100,
+        max_conversations_per_owner: int = 100,
+    ):
         self._contexts: Dict[str, ConversationContext] = {}
         self._conversations: Dict[str, StoredConversation] = {}
         self._lock = Lock()
         self._max_sessions = max(1, max_sessions)
+        self._max_conversations_per_owner = max(1, max_conversations_per_owner)
         # Exchanges are stored as user/assistant pairs, so keep an even limit.
         self._max_messages = max(2, max_messages - (max_messages % 2))
 
@@ -78,6 +84,7 @@ class InMemorySessionStore:
                     raise ValueError("conversation id already exists")
                 return self._copy_conversation(existing)
             self._evict_if_needed(session_id)
+            self._evict_owner_if_needed(owner_id)
             now = datetime.now(timezone.utc)
             conversation = StoredConversation(
                 owner_id=owner_id,
@@ -103,6 +110,7 @@ class InMemorySessionStore:
                 raise ValueError("conversation belongs to another owner")
             if existing is None:
                 self._evict_if_needed(session_id)
+                self._evict_owner_if_needed(owner_id)
                 now = datetime.now(timezone.utc)
                 existing = StoredConversation(
                     owner_id=owner_id,
@@ -154,6 +162,10 @@ class InMemorySessionStore:
                 return None
             return self._copy_conversation(conversation)
 
+    def has_managed_conversation(self, session_id: str) -> bool:
+        with self._lock:
+            return session_id in self._conversations
+
     def delete_conversation(self, owner_id: str, session_id: str) -> bool:
         with self._lock:
             conversation = self._conversations.get(session_id)
@@ -172,6 +184,18 @@ class InMemorySessionStore:
             victim = next(iter(self._contexts))
         self._conversations.pop(victim, None)
         self._contexts.pop(victim, None)
+
+    def _evict_owner_if_needed(self, owner_id: str) -> None:
+        owner_conversations = [
+            item
+            for item in self._conversations.values()
+            if item.owner_id == owner_id
+        ]
+        if len(owner_conversations) < self._max_conversations_per_owner:
+            return
+        victim = min(owner_conversations, key=lambda item: item.updated_at)
+        self._conversations.pop(victim.session_id, None)
+        self._contexts.pop(victim.session_id, None)
 
     @staticmethod
     def _copy_conversation(conversation: StoredConversation) -> StoredConversation:

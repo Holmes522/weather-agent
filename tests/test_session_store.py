@@ -76,3 +76,19 @@ def test_delete_conversation_also_removes_weather_context():
     assert store.get_conversation("owner-a", "delete-me") is None
     assert store.get_context("delete-me") is None
     assert store.delete_conversation("owner-a", "delete-me") is False
+
+
+def test_owner_conversation_limit_evicts_oldest_history_and_context():
+    store = InMemorySessionStore(max_conversations_per_owner=2)
+    store.create_conversation("owner-a", "oldest")
+    store.set_context(
+        "oldest",
+        ConversationContext((City("北京", 39.90, 116.40),)),
+    )
+    store.create_conversation("owner-a", "middle")
+    store.create_conversation("owner-a", "newest")
+
+    assert [
+        item.session_id for item in store.list_conversations("owner-a")
+    ] == ["newest", "middle"]
+    assert store.get_context("oldest") is None

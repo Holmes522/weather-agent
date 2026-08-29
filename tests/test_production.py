@@ -31,6 +31,12 @@ def test_health_endpoint_reports_ready_without_calling_weather_provider():
     assert response.headers["Cache-Control"] == "no-store"
 
 
+def test_production_anonymous_history_cookie_requires_https():
+    response = create_production_app().test_client().get("/api/conversations")
+
+    assert "Secure" in response.headers["Set-Cookie"]
+
+
 def test_production_hides_runtime_provider_configuration():
     http = create_production_app().test_client()
 
