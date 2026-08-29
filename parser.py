@@ -63,6 +63,8 @@ _VALID_LOCATION_PATTERN = re.compile(r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]
 _CONTEXT_ONLY_PATTERN = re.compile(
     r"^(?:需要|要|可以|好|好的|行|告诉我|请告诉我|看看|想看)[。！!？?]*$"
 )
+_REGIONAL_DISCOVERY_PATTERN = re.compile(r"哪里|哪些地方|哪些城市|什么地方|有哪些地方")
+_REGIONAL_WEATHER_PATTERN = re.compile(r"打雷|雷雨|雷暴|雷电|下雨|降雨|有雨")
 
 
 def parse_query(message: str) -> ParsedQuery:
@@ -85,6 +87,10 @@ def _extract_location_terms(message: str) -> Tuple[str, ...]:
     """提取天气问题中的地点片段；地点是否合法由地理编码边界确认。"""
 
     if _CONTEXT_ONLY_PATTERN.fullmatch(message.strip()):
+        return ()
+    if _REGIONAL_DISCOVERY_PATTERN.search(message) and _REGIONAL_WEATHER_PATTERN.search(
+        message
+    ):
         return ()
     text = _DATE_PATTERN.sub("", message.strip())
     text = re.sub(r"(?:会不会|是否|可能会|会)", "", text)

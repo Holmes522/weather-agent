@@ -36,6 +36,13 @@ from geocoding import (
 )
 from parser import SUPPORTED_CITIES, parse_query
 from rate_limiter import InMemoryRateLimiter
+from regional_weather import (
+    REGIONAL_WEATHER_INTENT,
+    RegionalWeatherProvider,
+    build_regional_weather_answer,
+    parse_regional_weather_query,
+    search_regional_weather,
+)
 from session_store import (
     ConversationContext,
     ConversationMessage,
@@ -131,6 +138,7 @@ def create_app(
     default_provider: Optional[str] = None,
     city_resolver: Optional[CityResolver] = None,
     llm_client: Optional[ChatModel] = None,
+    regional_weather_client: Optional[RegionalWeatherProvider] = None,
 ) -> Flask:
     """创建 Flask 应用；依赖可注入，便于脱离真实网络测试。"""
 
@@ -161,6 +169,9 @@ def create_app(
         base_url=effective_settings.geocoding_api_url,
         user_agent=effective_settings.geocoding_user_agent,
         timeout=effective_settings.request_timeout_seconds,
+    )
+    regional_client = regional_weather_client or OpenMeteoClient(
+        timeout=effective_settings.request_timeout_seconds
     )
     initial_llm = llm_client
     if initial_llm is None and effective_settings.llm_base_url:
@@ -408,6 +419,68 @@ def create_app(
             )
 
         previous_context = store.get_context(session_id)
+        regional_query = parse_regional_weather_query(
+            message,
+            previous_scope=(previous_context.regional_scope if previous_context else ""),
+            previous_phenomena=(
+                previous_context.regional_phenomena if previous_context else ()
+            ),
+        )
+        if regional_query is not None:
+            try:
+                regional_result = search_regional_weather(
+                    regional_client, regional_query
+                )
+            except WeatherClientError:
+                return _error_response(
+                    "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
+                )
+
+            answer = build_regional_weather_answer(regional_result)
+            results = [
+                {
+                    "city": item.city.name,
+                    "date": "今天",
+                    "corrected_from": None,
+                    "answer": f"{item.city.name}当前为{item.weather.condition}。",
+                    "weather": _weather_payload(item.weather, None),
+                }
+                for item in regional_result.matches
+            ]
+            previous_messages = previous_context.messages if previous_context else ()
+            messages = (
+                *previous_messages,
+                ConversationMessage("user", message),
+                ConversationMessage("assistant", answer),
+            )[-MAX_HISTORY_MESSAGES:]
+            store.set_context(
+                session_id,
+                ConversationContext(
+                    cities=(),
+                    day_offset=0,
+                    date_label="今天",
+                    intent=REGIONAL_WEATHER_INTENT,
+                    messages=messages,
+                    regional_scope=regional_query.scope,
+                    regional_phenomena=regional_query.phenomena,
+                ),
+            )
+            response_payload = {
+                "session_id": session_id,
+                "provider": "openmeteo",
+                "intent": REGIONAL_WEATHER_INTENT,
+                "display_mode": "text",
+                "scope": regional_query.scope,
+                "phenomena": list(regional_query.phenomena),
+                "cities": [item.city.name for item in regional_result.matches],
+                "results": results,
+                "answer": answer,
+            }
+            record_visible_exchange_for_request(
+                store, session_id, message, response_payload
+            )
+            return jsonify(response_payload)
+
         grounding_required = _requires_weather_grounding(message, previous_context)
 
         with llm_lock:
@@ -483,6 +556,14 @@ def create_app(
                         intent=previous_context.intent if previous_context else BRIEF,
                         offered_full_weather=False,
                         messages=messages,
+                        regional_scope=(
+                            previous_context.regional_scope if previous_context else ""
+                        ),
+                        regional_phenomena=(
+                            previous_context.regional_phenomena
+                            if previous_context
+                            else ()
+                        ),
                     )
                 store.set_context(session_id, context)
                 response_payload = _agent_response_payload(

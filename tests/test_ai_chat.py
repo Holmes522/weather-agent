@@ -35,6 +35,20 @@ class FakeLLMClient:
         return self.responses.pop(0)
 
 
+class FakeRegionalWeatherClient:
+    def __init__(self):
+        self.calls = []
+
+    def get_current_many(self, cities):
+        self.calls.append(tuple(city.name for city in cities))
+        return tuple(
+            WeatherData(25.0, "雷雨", 85, 3.0, True)
+            if city.name == "长沙"
+            else WeatherData(25.0, "晴", 50, 2.0, False)
+            for city in cities
+        )
+
+
 def weather_tool_turn(city="深圳", day_offset=1, detail="advice"):
     return AssistantTurn(
         "",
@@ -75,6 +89,29 @@ def test_configured_model_can_answer_general_chat_without_weather():
     assert body["model"] == "测试模型"
     assert body["tool_used"] is False
     assert body["display_mode"] == "text"
+    assert weather.calls == []
+
+
+def test_regional_live_weather_is_grounded_before_the_configured_model():
+    weather = FakeWeatherClient()
+    regional = FakeRegionalWeatherClient()
+    model = FakeLLMClient([AssistantTurn("我需要你先提供城市。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        llm_client=model,
+        regional_weather_client=regional,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "哪里在打雷下雨", "session_id": "ai-regional"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["cities"] == ["长沙"]
+    assert regional.calls
+    assert model.calls == []
     assert weather.calls == []
 
 

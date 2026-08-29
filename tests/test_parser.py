@@ -66,3 +66,10 @@ def test_missing_date_defaults_to_today():
     assert result.city.name == "上海"
     assert result.day_offset == 0
     assert result.date_label == "今天"
+
+
+def test_regional_rain_discovery_question_is_not_treated_as_a_city():
+    result = parse_query("哪里在打雷和下雨")
+
+    assert result.city is None
+    assert result.location_terms == ()

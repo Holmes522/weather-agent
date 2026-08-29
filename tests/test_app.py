@@ -37,6 +37,21 @@ class FakeCityResolver:
         return self.resolutions.get(term)
 
 
+class FakeRegionalWeatherClient:
+    def __init__(self, matching_city="长沙"):
+        self.calls = []
+        self.matching_city = matching_city
+
+    def get_current_many(self, cities):
+        self.calls.append(tuple(city.name for city in cities))
+        return tuple(
+            WeatherData(27.0, "雷雨", 88, 4.0, True)
+            if city.name == self.matching_city
+            else WeatherData(26.0, "晴", 55, 2.0, False)
+            for city in cities
+        )
+
+
 @pytest.fixture
 def settings():
     return Settings(api_key="test-key")
@@ -59,6 +74,86 @@ def test_chat_returns_current_weather_for_city(settings):
     assert body["weather"]["condition"] == "晴"
     assert body["weather"]["advice"] is None
     assert client.calls == [("current", "北京", 0)]
+
+
+def test_chat_searches_current_thunderstorms_without_treating_phrase_as_city(settings):
+    regional = FakeRegionalWeatherClient()
+    resolver = FakeCityResolver()
+    app = create_app(
+        settings=settings,
+        weather_client=FakeWeatherClient(),
+        city_resolver=resolver,
+        regional_weather_client=regional,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "哪里在打雷和下雨", "session_id": "regional-rain"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["intent"] == "regional_weather"
+    assert body["scope"] == "中国"
+    assert body["phenomena"] == ["thunderstorm"]
+    assert body["cities"] == ["长沙"]
+    assert "当前监测" in body["answer"]
+    assert resolver.calls == []
+    assert len(regional.calls) == 1
+
+
+def test_chat_inherits_thunderstorm_search_when_follow_up_names_hunan(settings):
+    regional = FakeRegionalWeatherClient()
+    app = create_app(
+        settings=settings,
+        weather_client=FakeWeatherClient(),
+        regional_weather_client=regional,
+    )
+    http = app.test_client()
+
+    first = http.post(
+        "/chat",
+        json={"message": "告诉我现在哪里在打雷下雨", "session_id": "regional-context"},
+    )
+    follow_up = http.post(
+        "/chat",
+        json={"message": "湖南省有哪些地方", "session_id": "regional-context"},
+    )
+
+    assert first.status_code == 200
+    assert follow_up.status_code == 200
+    body = follow_up.get_json()
+    assert body["intent"] == "regional_weather"
+    assert body["scope"] == "湖南"
+    assert body["phenomena"] == ["thunderstorm"]
+    assert body["cities"] == ["长沙"]
+    assert all(name in regional.calls[-1] for name in ("长沙", "岳阳", "张家界"))
+
+
+def test_empty_regional_result_still_preserves_search_context(settings):
+    regional = FakeRegionalWeatherClient(matching_city=None)
+    app = create_app(
+        settings=settings,
+        weather_client=FakeWeatherClient(),
+        regional_weather_client=regional,
+    )
+    http = app.test_client()
+
+    first = http.post(
+        "/chat",
+        json={"message": "现在哪里在打雷下雨", "session_id": "empty-regional"},
+    )
+    follow_up = http.post(
+        "/chat",
+        json={"message": "湖南省有哪些地方", "session_id": "empty-regional"},
+    )
+
+    assert first.status_code == 200
+    assert first.get_json()["cities"] == []
+    assert follow_up.status_code == 200
+    assert follow_up.get_json()["scope"] == "湖南"
+    assert follow_up.get_json()["cities"] == []
+    assert "暂未发现" in follow_up.get_json()["answer"]
 
 
 def test_chat_remembers_city_for_follow_up_and_adds_rain_advice(settings):

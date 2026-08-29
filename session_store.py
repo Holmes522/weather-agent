@@ -23,6 +23,8 @@ class ConversationContext:
     intent: str = "full"
     offered_full_weather: bool = False
     messages: Tuple[ConversationMessage, ...] = ()
+    regional_scope: str = ""
+    regional_phenomena: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
