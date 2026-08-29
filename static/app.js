@@ -23,6 +23,7 @@
   let pendingDeleteId = null;
   const WEATHER_PROVIDER_STORAGE_KEY = "weather-agent.weather-provider";
   const LLM_PROFILE_STORAGE_KEY = "weather-agent.llm-profile";
+  const ACTIVE_CONVERSATION_STORAGE_KEY = "weather-agent.active-conversation";
 
   function readStoredSelection(key) {
     try {
@@ -299,6 +300,7 @@
 
   function setActiveConversation(conversation) {
     sessionId = conversation.id;
+    storeSelection(ACTIVE_CONVERSATION_STORAGE_KEY, conversation.id);
     currentConversationTitle.textContent = conversation.title;
     renderConversationList();
   }
@@ -469,7 +471,10 @@
     try {
       await refreshConversations();
       if (conversations.length > 0) {
-        const payload = await requestJson(`/api/conversations/${conversations[0].id}`);
+        const rememberedId = readStoredSelection(ACTIVE_CONVERSATION_STORAGE_KEY);
+        const target = conversations.find((item) => item.id === rememberedId)
+          || conversations[0];
+        const payload = await requestJson(`/api/conversations/${target.id}`);
         renderConversation(payload.conversation);
       } else {
         await createConversation();

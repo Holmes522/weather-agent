@@ -432,7 +432,8 @@ a:focus-visible {
 .chat-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .welcome {
@@ -491,7 +492,7 @@ a:focus-visible {
 }
 
 .chat-log {
-  min-height: 120px;
+  min-height: 0;
   margin: 0;
   padding: 28px clamp(18px, 6vw, 72px);
   display: flex;
@@ -712,6 +713,9 @@ a:focus-visible {
 }
 
 .composer-wrap {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
   padding: 16px clamp(18px, 6vw, 72px) 20px;
   background: rgba(255, 255, 255, 0.97);
   border-top: 1px solid var(--line);

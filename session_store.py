@@ -7,7 +7,7 @@ from threading import Lock
 from typing import Dict, Optional, Tuple
 
 from parser import City
-from weather_export import WeatherSnapshot
+from weather_export import WeatherReportContext, WeatherSnapshot
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class ConversationContext:
     regional_scope: str = ""
     regional_phenomena: Tuple[str, ...] = ()
     weather_snapshots: Tuple[WeatherSnapshot, ...] = ()
+    weather_report_context: Optional[WeatherReportContext] = None
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app import create_app
 from config import Settings
 from weather_client import WeatherData
@@ -115,3 +117,19 @@ def test_home_renders_accessible_conversation_history_controls():
     assert 'id="current-conversation-title"' in html
     assert "新建对话" in html
     assert "历史对话" in html
+
+
+def test_chat_script_remembers_the_active_conversation_across_settings_navigation():
+    source = (Path(__file__).parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'weather-agent.active-conversation' in source
+    assert "readStoredSelection(ACTIVE_CONVERSATION_STORAGE_KEY)" in source
+    assert "storeSelection(ACTIVE_CONVERSATION_STORAGE_KEY, conversation.id)" in source
+
+
+def test_chat_layout_keeps_the_composer_at_the_bottom_for_short_conversations():
+    source = (Path(__file__).parents[1] / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "grid-template-rows: auto minmax(0, 1fr) auto;" in source
+    assert ".chat-panel {" in source and "overflow: hidden;" in source
+    assert ".chat-log {\n  min-height: 0;" in source

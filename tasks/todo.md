@@ -24,3 +24,9 @@
 - [x] Task 22: 多 AI 模型配置注册表与常见服务预设；验证：`pytest tests/test_llm_config.py tests/test_llm_registry.py`
 - [x] Task 23: 聊天页/配置页选择、切换和浏览器记忆；验证：页面契约、`node --check`、真实浏览器
 - [x] Task 24: 文件渲染、完整回归、安全审查、README 与远端 CI；验证：`pytest -q`
+- [x] Task 25: 多城市行程解析与日期分配；验证：`pytest tests/test_itinerary.py`
+- [x] Task 26: 行程天气矩阵查询与导出专用响应；验证：`pytest tests/test_weather_export_api.py`
+- [x] Task 27: 四格式逐日建议和出行清单；验证：`pytest tests/test_weather_export.py`
+- [x] Task 28: 完整回归、文件重开/视觉检查、安全审查与远端 CI；验证：`pytest -q`
+- [x] Task 29: 配置页往返后恢复当前对话；验证：页面契约、`node --check static/app.js` 与真实浏览器
+- [x] Task 30: 短对话时输入区固定在工作区底部；验证：CSS 契约与桌面/窄屏真实浏览器

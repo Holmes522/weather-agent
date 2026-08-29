@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -32,7 +32,7 @@ FORMAT_PATTERNS = (
     ("pdf", re.compile(r"pdf", re.IGNORECASE)),
     ("md", re.compile(r"markdown|md", re.IGNORECASE)),
 )
-MAX_EXPORT_RECORDS = 5
+MAX_EXPORT_RECORDS = 35
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,15 @@ class WeatherSnapshot:
 
 
 @dataclass(frozen=True)
+class WeatherReportContext:
+    """报告级行程信息；不包含密钥或用户自由路径。"""
+
+    origin: Optional[str] = None
+    total_days: int = 0
+    ordered: bool = False
+
+
+@dataclass(frozen=True)
 class WeatherArtifact:
     filename: str
     mimetype: str
@@ -73,19 +82,24 @@ def parse_export_request(message: str) -> ExportRequest:
 
 
 def weather_query_text(message: str) -> str:
-    """移除导出指令，避免“把”和格式名被城市解析器误认成地点。"""
+    """只移除导出动作和格式，保留其后的行程、出发地和停留信息。"""
 
     cleaned = re.sub(
-        r"(?:导出|保存|生成|输出|下载|存储|做成|整理成).*$",
-        "",
+        r"(?:结果)?\s*(?:导出|保存|生成|输出|下载|存储|做成|整理成)"
+        r"\s*(?:来|为|成)?\s*"
+        r"(?:docx?|word|文档|xlsx?|excel|execl|表格|pdf|markdown|md|文件|表)?",
+        " ",
         message,
         flags=re.IGNORECASE,
-    ).strip()
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ，,。；;")
     return re.sub(r"^(?:请)?把", "", cleaned).strip()
 
 
 def build_weather_document(
-    snapshots: Sequence[WeatherSnapshot], format_name: str
+    snapshots: Sequence[WeatherSnapshot],
+    format_name: str,
+    report_context: Optional[WeatherReportContext] = None,
 ) -> WeatherArtifact:
     """生成有界、无宏无公式的天气报告字节。"""
 
@@ -101,7 +115,7 @@ def build_weather_document(
     builder = builders.get(format_name)
     if builder is None:
         raise ValueError("unsupported export format")
-    return builder(records)
+    return builder(records, report_context)
 
 
 def _rows(records: Sequence[WeatherSnapshot]):
@@ -114,23 +128,67 @@ def _rows(records: Sequence[WeatherSnapshot]):
             f"{item.humidity_percent}%",
             _number(item.wind_speed_mps),
             "是" if item.rain_expected else "否",
-            item.advice or "—",
+            item.advice or build_travel_advice(
+                item.temperature_c,
+                item.condition,
+                item.humidity_percent,
+                item.wind_speed_mps,
+                item.rain_expected,
+            ),
             item.provider,
         ]
         for item in records
     ]
 
 
-def _build_markdown(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
+def build_travel_advice(
+    temperature_c: float,
+    condition: str,
+    humidity_percent: int,
+    wind_speed_mps: float,
+    rain_expected: bool,
+) -> str:
+    """根据可验证的天气字段生成简短、完整且逐日可用的出行建议。"""
+
+    suggestions = []
+    if rain_expected or "雨" in condition:
+        suggestions.append("携带雨伞或轻便雨衣，注意路面湿滑")
+    if "雷" in condition:
+        suggestions.append("雷电时减少空旷地带和高处停留")
+    if temperature_c >= 32:
+        suggestions.append("做好防晒并及时补水")
+    elif temperature_c <= 10:
+        suggestions.append("穿保暖外套")
+    elif temperature_c <= 20:
+        suggestions.append("带一件薄外套")
+    else:
+        suggestions.append("适合轻便、透气的分层穿着")
+    if wind_speed_mps >= 8:
+        suggestions.append("风力较强，优先穿防风外层并留意高空坠物")
+    elif wind_speed_mps >= 5:
+        suggestions.append("可准备防风外套")
+    if humidity_percent >= 80:
+        suggestions.append("湿度较高，可准备速干衣物")
+    return "；".join(suggestions) + "。"
+
+
+def _build_markdown(
+    records: Sequence[WeatherSnapshot],
+    report_context: Optional[WeatherReportContext],
+) -> WeatherArtifact:
     headers = ["城市", "日期", "温度（℃）", "天气", "湿度", "风速（m/s）", "有雨", "建议", "数据源"]
     lines = [
         "# 天气报告",
         "",
+        *_context_markdown(report_context),
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] * len(headers)) + " |",
     ]
     for row in _rows(records):
         lines.append("| " + " | ".join(_escape_markdown(str(value)) for value in row) + " |")
+    lines.extend(("", "## 出行清单", ""))
+    for item, reason in _packing_items(records):
+        lines.append(f"- **{item}**：{reason}")
     lines.extend(("", "> 本报告由天气查询 Agent 根据查询时返回的数据生成。", ""))
     return WeatherArtifact(
         _filename(records, "md"),
@@ -139,7 +197,10 @@ def _build_markdown(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
     )
 
 
-def _build_docx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
+def _build_docx(
+    records: Sequence[WeatherSnapshot],
+    report_context: Optional[WeatherReportContext],
+) -> WeatherArtifact:
     document = Document()
     normal = document.styles["Normal"]
     normal.font.name = "Microsoft YaHei"
@@ -150,6 +211,8 @@ def _build_docx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title.runs[0].font.color.rgb = RGBColor(26, 68, 109)
     document.add_paragraph("由天气查询 Agent 根据最近一次实时查询结果生成。")
+    for label, value in _context_rows(report_context):
+        document.add_paragraph(f"{label}：{value}")
 
     headers = ["城市", "日期", "温度℃", "天气", "湿度", "风速m/s", "有雨", "建议", "数据源"]
     table = document.add_table(rows=1, cols=len(headers))
@@ -160,6 +223,9 @@ def _build_docx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
         cells = table.add_row().cells
         for index, value in enumerate(values):
             cells[index].text = str(value)
+    document.add_heading("出行清单", level=1)
+    for item, reason in _packing_items(records):
+        document.add_paragraph(f"{item}：{reason}", style="List Bullet")
     output = BytesIO()
     document.save(output)
     return WeatherArtifact(
@@ -169,7 +235,10 @@ def _build_docx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
     )
 
 
-def _build_xlsx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
+def _build_xlsx(
+    records: Sequence[WeatherSnapshot],
+    report_context: Optional[WeatherReportContext],
+) -> WeatherArtifact:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "天气报告"
@@ -185,10 +254,28 @@ def _build_xlsx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
         cell.alignment = Alignment(horizontal="center", vertical="center")
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
-    widths = (12, 10, 12, 12, 10, 14, 10, 38, 18)
+    widths = (12, 23, 12, 12, 10, 14, 10, 38, 18)
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    checklist = workbook.create_sheet("出行清单")
+    checklist.append(["出行清单", "说明"])
+    for label, value in _context_rows(report_context):
+        checklist.append([_excel_safe(label), _excel_safe(value)])
+    checklist.append([])
+    checklist.append(["物品 / 准备", "天气依据"])
+    for item, reason in _packing_items(records):
+        checklist.append([_excel_safe(item), _excel_safe(reason)])
+    for cell in checklist[1]:
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.fill = header_fill
+    checklist.freeze_panes = "A2"
+    checklist.column_dimensions["A"].width = 24
+    checklist.column_dimensions["B"].width = 64
+    for row in checklist.iter_rows():
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     output = BytesIO()
@@ -200,7 +287,10 @@ def _build_xlsx(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
     )
 
 
-def _build_pdf(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
+def _build_pdf(
+    records: Sequence[WeatherSnapshot],
+    report_context: Optional[WeatherReportContext],
+) -> WeatherArtifact:
     output = BytesIO()
     document = SimpleDocTemplate(
         output,
@@ -260,20 +350,33 @@ def _build_pdf(records: Sequence[WeatherSnapshot]) -> WeatherArtifact:
             ]
         )
     )
-    document.build(
+    story = [Paragraph("天气报告", title_style), Spacer(1, 3 * mm)]
+    for label, value in _context_rows(report_context):
+        story.append(Paragraph(f"{_escape_xml(label)}：{_escape_xml(value)}", body_style))
+    story.extend([Spacer(1, 3 * mm), table, Spacer(1, 4 * mm)])
+    story.append(Paragraph("出行清单", title_style))
+    for item, reason in _packing_items(records):
+        story.append(
+            Paragraph(
+                f"• {_escape_xml(item)}：{_escape_xml(reason)}",
+                body_style,
+            )
+        )
+    story.extend(
         [
-            Paragraph("天气报告", title_style),
-            Spacer(1, 5 * mm),
-            table,
-            Spacer(1, 4 * mm),
+            Spacer(1, 3 * mm),
             Paragraph("本报告由天气查询 Agent 根据查询时返回的数据生成。", body_style),
         ]
     )
+    document.build(story)
     return WeatherArtifact(_filename(records, "pdf"), "application/pdf", output.getvalue())
 
 
 def _filename(records: Sequence[WeatherSnapshot], extension: str) -> str:
-    city_part = "-".join(re.sub(r"[^\w\u4e00-\u9fff-]", "", item.city) for item in records)
+    unique_cities = tuple(dict.fromkeys(item.city for item in records))
+    city_part = "-".join(
+        re.sub(r"[^\w\u4e00-\u9fff-]", "", city) for city in unique_cities
+    )
     safe_city_part = city_part[:48] or "weather"
     return f"天气报告-{safe_city_part}.{extension}"
 
@@ -294,3 +397,54 @@ def _excel_safe(value):
 
 def _escape_xml(value: str) -> str:
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _context_rows(
+    report_context: Optional[WeatherReportContext],
+) -> Tuple[Tuple[str, str], ...]:
+    if report_context is None:
+        return ()
+    rows = []
+    if report_context.origin:
+        rows.append(("出发地", report_context.origin))
+    if report_context.total_days:
+        rows.append(("总行程天数", f"{report_context.total_days} 天"))
+        rows.append(
+            (
+                "日期分配方式",
+                "按目的地顺序逐日安排"
+                if report_context.ordered
+                else "每个目的地均列出全部行程日",
+            )
+        )
+    return tuple(rows)
+
+
+def _context_markdown(
+    report_context: Optional[WeatherReportContext],
+) -> Tuple[str, ...]:
+    rows = _context_rows(report_context)
+    if not rows:
+        return ()
+    return tuple([*(f"- **{label}**：{value}" for label, value in rows), ""])
+
+
+def _packing_items(
+    records: Sequence[WeatherSnapshot],
+) -> Tuple[Tuple[str, str], ...]:
+    items = []
+    if any(item.rain_expected or "雨" in item.condition for item in records):
+        items.append(("雨伞或轻便雨衣", "行程中存在降雨天气，并注意准备防滑鞋履"))
+    if any("雷" in item.condition for item in records):
+        items.append(("雷雨备选安排", "雷电时减少空旷地带、高处和水边活动"))
+    if any(item.temperature_c >= 30 for item in records):
+        items.append(("防晒用品与饮用水", "部分行程日气温较高"))
+    if any(item.temperature_c <= 20 for item in records):
+        items.append(("薄外套或保暖外层", "部分行程日气温偏低"))
+    if any(item.wind_speed_mps >= 5 for item in records):
+        items.append(("防风外套", "部分行程日风力较明显"))
+    if any(item.humidity_percent >= 80 for item in records):
+        items.append(("速干衣物", "部分行程日湿度较高"))
+    if not items:
+        items.append(("轻便分层衣物", "当前预报未显示明显雨、强风或极端温度"))
+    return tuple(items)

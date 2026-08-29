@@ -12,7 +12,7 @@
 | `agent-presentation` | 展示 AI 状态、通用文本回复和天气卡片 | `agent-orchestrator`, `model-config`, `chat-presentation` |
 | `conversation-history` | 匿名会话 CRUD、历史消息重放和响应式侧边栏 | `agent-presentation` |
 | `regional-weather-search` | 全国主要城市或省级范围的实时降雨/雷雨批量扫描，并继承范围追问上下文 | `conversational-intent`, `weather-tool` |
-| `weather-export` | 将最近一次结构化天气结果导出为 Word、Excel、PDF 或 Markdown，并提供临时下载 | `chat-presentation`, `conversation-history` |
+| `weather-export` | 将最近一次结构化天气结果或多城市逐日行程导出为 Word、Excel、PDF 或 Markdown，补齐出行建议与清单并提供临时下载 | `location-understanding`, `chat-presentation`, `conversation-history` |
 | `llm-profiles` | 保存多个进程内 AI 模型配置，列出并切换当前模型，且不向前端返回密钥 | `llm-chat`, `model-config` |
 | `client-selection` | 在聊天页选择天气服务和 AI 配置，并只在浏览器持久化非敏感配置 ID | `llm-profiles`, `agent-presentation` |
 

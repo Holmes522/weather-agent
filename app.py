@@ -57,14 +57,20 @@ from llm_registry import (
 )
 from export_store import InMemoryExportStore
 from export_chat import (
-    attach_export,
     create_export_payload,
     export_prompt_payload,
     snapshots_from_results,
 )
 from weather_export import (
+    WeatherReportContext,
     parse_export_request,
     weather_query_text,
+)
+from itinerary import (
+    ItineraryCityNotFoundError,
+    ItineraryValidationError,
+    parse_itinerary_request,
+    query_itinerary_weather,
 )
 from weather_client import (
     OpenMeteoClient,
@@ -456,8 +462,17 @@ def create_app(
             )
             record_visible_exchange_for_request(store, session_id, message, response_payload)
             return jsonify(response_payload)
+        try:
+            itinerary_request = (
+                parse_itinerary_request(message)
+                if export_request.requested and export_request.format
+                else None
+            )
+        except ItineraryValidationError as error:
+            return _error_response("INVALID_ITINERARY", str(error), 422)
         if (
             export_request.requested
+            and itinerary_request is None
             and parsed_export_query is not None
             and (
                 not parsed_export_query.location_terms
@@ -470,6 +485,7 @@ def create_app(
                     previous_context.weather_snapshots,
                     export_request.format or "md",
                     export_store,
+                    previous_context.weather_report_context,
                 )
             else:
                 response_payload = export_prompt_payload(
@@ -477,6 +493,60 @@ def create_app(
                     "还没有可导出的天气数据，请先查询天气。",
                 )
             record_visible_exchange_for_request(store, session_id, message, response_payload)
+            return jsonify(response_payload)
+
+        if itinerary_request is not None:
+            try:
+                itinerary_snapshots, itinerary_cities = query_itinerary_weather(
+                    itinerary_request,
+                    selected_client,
+                    resolver,
+                    _provider_name(provider),
+                )
+            except ItineraryValidationError as error:
+                return _error_response("INVALID_ITINERARY", str(error), 422)
+            except ItineraryCityNotFoundError as error:
+                return _error_response(
+                    "CITY_NOT_FOUND",
+                    f"没有找到“{error.location}”，请检查城市名称。",
+                    422,
+                )
+            except GeocodingError:
+                return _error_response(
+                    "LOCATION_UNAVAILABLE", "城市查询服务暂时不可用，请稍后重试。", 502
+                )
+            except WeatherClientError:
+                return _error_response(
+                    "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
+                )
+
+            report_context = WeatherReportContext(
+                origin=itinerary_request.origin,
+                total_days=itinerary_request.total_days,
+                ordered=itinerary_request.ordered,
+            )
+            response_payload = create_export_payload(
+                session_id,
+                itinerary_snapshots,
+                export_request.format or "md",
+                export_store,
+                report_context,
+            )
+            store.set_context(
+                session_id,
+                ConversationContext(
+                    cities=itinerary_cities,
+                    day_offset=itinerary_request.start_offset,
+                    date_label="行程",
+                    intent=FULL,
+                    messages=previous_context.messages if previous_context else (),
+                    weather_snapshots=itinerary_snapshots,
+                    weather_report_context=report_context,
+                ),
+            )
+            record_visible_exchange_for_request(
+                store, session_id, message, response_payload
+            )
             return jsonify(response_payload)
 
         pending_export_format = (
@@ -603,6 +673,11 @@ def create_app(
                             if previous_context
                             else ()
                         ),
+                        weather_report_context=(
+                            previous_context.weather_report_context
+                            if previous_context
+                            else None
+                        ),
                     )
                 response_payload = _agent_response_payload(
                     session_id=session_id,
@@ -618,8 +693,7 @@ def create_app(
                     )
                     context = replace(context, weather_snapshots=snapshots)
                     if pending_export_format:
-                        response_payload = attach_export(
-                            response_payload,
+                        response_payload = create_export_payload(
                             session_id,
                             snapshots,
                             pending_export_format,
@@ -753,8 +827,7 @@ def create_app(
             "results": weather_results,
         }
         if pending_export_format:
-            response_payload = attach_export(
-                response_payload,
+            response_payload = create_export_payload(
                 session_id,
                 snapshots_from_results(weather_results, _provider_name(provider)),
                 pending_export_format,

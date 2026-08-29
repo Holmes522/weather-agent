@@ -84,6 +84,31 @@ def test_openmeteo_forecast_uses_requested_day_and_rain_probability():
     assert "precipitation_probability_max" in calls[0]["params"]["daily"]
 
 
+def test_openmeteo_forecast_range_uses_one_request_for_multiple_days():
+    city = parse_query("北京天气").city
+    response = FakeResponse(
+        {
+            "daily": {
+                "weather_code": [0, 0, 61, 2, 3],
+                "temperature_2m_mean": [20, 21, 22, 23, 24],
+                "relative_humidity_2m_mean": [50, 51, 52, 53, 54],
+                "wind_speed_10m_mean": [1, 2, 3, 4, 5],
+                "precipitation_probability_max": [0, 0, 80, 0, 0],
+                "precipitation_sum": [0, 0, 4, 0, 0],
+            }
+        }
+    )
+    calls = []
+
+    client = OpenMeteoClient(request_get=lambda **kwargs: calls.append(kwargs) or response)
+    results = client.get_forecast_range(city, (1, 2, 3, 4))
+
+    assert [result.temperature_c for result in results] == [21, 22, 23, 24]
+    assert results[1].rain_expected is True
+    assert len(calls) == 1
+    assert calls[0]["params"]["forecast_days"] == 5
+
+
 def test_openmeteo_rejects_invalid_percentage_from_upstream():
     city = parse_query("广州后天天气").city
     response = FakeResponse(

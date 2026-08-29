@@ -138,16 +138,39 @@ class OpenMeteoClient:
         )
 
     def get_forecast(self, city: City, day_offset: int) -> WeatherData:
+        return self.get_forecast_range(city, (day_offset,))[0]
+
+    def get_forecast_range(
+        self, city: City, day_offsets: Sequence[int]
+    ) -> Tuple[WeatherData, ...]:
+        """一次请求同一城市的多个未来日期，供行程导出避免重复调用。"""
+
+        offsets = tuple(day_offsets)
+        if (
+            not offsets
+            or any(
+                isinstance(offset, bool)
+                or not isinstance(offset, int)
+                or offset < 1
+                or offset > 15
+                for offset in offsets
+            )
+        ):
+            raise ValueError("forecast offsets must be integers from 1 to 15")
         payload = self._request_json(
             city,
             {
                 "daily": ",".join(self.DAILY_FIELDS),
-                "forecast_days": 3,
+                "forecast_days": max(3, max(offsets) + 1),
                 "timezone": "auto",
                 "wind_speed_unit": "ms",
             },
         )
         daily = _dict_field(payload, "daily")
+        return tuple(self._normalize_forecast_day(daily, offset) for offset in offsets)
+
+    @staticmethod
+    def _normalize_forecast_day(daily: Dict[str, Any], day_offset: int) -> WeatherData:
         code = _wmo_code(_daily_value(daily, "weather_code", day_offset))
         probability = _percentage(
             _daily_value(daily, "precipitation_probability_max", day_offset),
@@ -259,7 +282,7 @@ class WeatherApiClient:
         payload = self._request_json(
             "/forecast.json",
             city,
-            {"days": 3, "aqi": "no", "alerts": "no"},
+            {"days": max(3, day_offset + 1), "aqi": "no", "alerts": "no"},
         )
         forecast = _dict_field(payload, "forecast")
         forecast_days = forecast.get("forecastday")
@@ -638,7 +661,7 @@ class QWeatherClient:
     def get_forecast(self, city: City, day_offset: int) -> WeatherData:
         payload = self._request_json(
             f"/weather/v1/daily/{city.latitude:.4f}/{city.longitude:.4f}",
-            {"days": 3, "localTime": "true", "lang": "zh"},
+            {"days": max(3, day_offset + 1), "localTime": "true", "lang": "zh"},
         )
         days = payload.get("days")
         if not isinstance(days, list) or day_offset >= len(days):
