@@ -1,11 +1,13 @@
 """天气查询 Agent 的 Flask REST API。"""
 
 import re
+from dataclasses import replace
+from io import BytesIO
 from threading import RLock
 from typing import Dict, Optional
 from uuid import uuid4
 
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from agent import AgentError, ChatModel, WeatherToolInput, run_agent
@@ -47,6 +49,23 @@ from session_store import (
     InMemorySessionStore,
 )
 from llm_client import LLMClientError, OpenAICompatibleClient
+from llm_registry import (
+    LLM_PROVIDER_CATALOG,
+    InMemoryLLMRegistry,
+    LLMRegistryError,
+    build_runtime_llm,
+)
+from export_store import InMemoryExportStore
+from export_chat import (
+    attach_export,
+    create_export_payload,
+    export_prompt_payload,
+    snapshots_from_results,
+)
+from weather_export import (
+    parse_export_request,
+    weather_query_text,
+)
 from weather_client import (
     OpenMeteoClient,
     OpenWeatherClient,
@@ -94,40 +113,6 @@ PROVIDER_CATALOG = (
         "configurable": True,
     },
 )
-LLM_PROVIDER_CATALOG = (
-    {
-        "id": "openai",
-        "name": "OpenAI",
-        "base_url": "https://api.openai.com/v1",
-        "requires_key": True,
-    },
-    {
-        "id": "deepseek",
-        "name": "DeepSeek",
-        "base_url": "https://api.deepseek.com",
-        "requires_key": True,
-    },
-    {
-        "id": "openrouter",
-        "name": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "requires_key": True,
-    },
-    {
-        "id": "ollama",
-        "name": "Ollama（本机）",
-        "base_url": "http://127.0.0.1:11434/v1",
-        "requires_key": False,
-    },
-    {
-        "id": "custom",
-        "name": "自定义兼容接口",
-        "base_url": None,
-        "requires_key": True,
-    },
-)
-
-
 def create_app(
     settings: Optional[Settings] = None,
     weather_client: Optional[WeatherProvider] = None,
@@ -184,8 +169,8 @@ def create_app(
             raise ConfigurationError("LLM environment configuration is invalid") from error
 
     clients_lock = RLock()
-    llm_lock = RLock()
-    llm_state = {"client": initial_llm}
+    llm_registry = InMemoryLLMRegistry(initial_llm)
+    export_store = InMemoryExportStore()
     chat_rate_limiter = InMemoryRateLimiter(
         effective_settings.chat_rate_limit_per_minute
     )
@@ -254,7 +239,8 @@ def create_app(
             ],
             default_provider=effective_default_provider,
             settings_enabled=not effective_settings.is_production,
-            llm_status=_llm_status(llm_state, llm_lock),
+            llm_status=llm_registry.status_payload()["llm"],
+            llm_profiles=llm_registry.status_payload()["models"],
         )
 
     @app.get("/settings")
@@ -271,7 +257,8 @@ def create_app(
                 provider for provider in PROVIDER_CATALOG if provider["configurable"]
             ],
             llm_providers=LLM_PROVIDER_CATALOG,
-            llm_status=_llm_status(llm_state, llm_lock),
+            llm_status=llm_registry.status_payload()["llm"],
+            llm_profiles=llm_registry.status_payload()["models"],
         )
 
     @app.get("/api/providers")
@@ -332,7 +319,7 @@ def create_app(
         local_error = _require_local_request()
         if local_error is not None:
             return local_error
-        return jsonify({"llm": _llm_status(llm_state, llm_lock)})
+        return jsonify(llm_registry.status_payload())
 
     @app.post("/api/llm")
     def configure_llm():
@@ -345,7 +332,7 @@ def create_app(
         if not isinstance(body, dict):
             return _error_response("INVALID_JSON", "请求必须是 JSON 对象。", 400)
         try:
-            client = _build_runtime_llm(body)
+            client = build_runtime_llm(body)
         except (TypeError, ValueError):
             return _error_response(
                 "INVALID_LLM_CONFIG",
@@ -353,13 +340,47 @@ def create_app(
                 422,
             )
 
-        with llm_lock:
-            was_configured = llm_state["client"] is not None
-            llm_state["client"] = client
-        return (
-            jsonify({"llm": _llm_status(llm_state, llm_lock)}),
-            200 if was_configured else 201,
+        try:
+            llm_registry.add(client)
+        except LLMRegistryError:
+            return _error_response(
+                "LLM_PROFILE_LIMIT", "已保存的模型配置达到上限，请重启后重新配置。", 409
+            )
+        return jsonify(llm_registry.status_payload()), 201
+
+    @app.patch("/api/llm/active")
+    def select_llm():
+        if effective_settings.is_production:
+            abort(404)
+        local_error = _require_local_request()
+        if local_error is not None:
+            return local_error
+        body = request.get_json(silent=True)
+        profile_id = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(profile_id, str):
+            return _error_response("INVALID_LLM", "请选择有效的 AI 模型配置。", 422)
+        try:
+            llm_registry.select(profile_id)
+        except LLMRegistryError:
+            return _error_response("INVALID_LLM", "没有找到该 AI 模型配置。", 422)
+        return jsonify(llm_registry.status_payload())
+
+    @app.get("/api/exports/<export_id>")
+    def download_export(export_id: str):
+        if not re.fullmatch(r"[0-9a-f]{32}", export_id):
+            abort(404)
+        artifact = export_store.get(export_id)
+        if artifact is None:
+            abort(404)
+        response = send_file(
+            BytesIO(artifact.content),
+            mimetype=artifact.mimetype,
+            as_attachment=True,
+            download_name=artifact.filename,
+            max_age=0,
         )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.errorhandler(413)
     def payload_too_large(_error):
@@ -417,6 +438,50 @@ def create_app(
             )
 
         previous_context = store.get_context(session_id)
+        export_request = parse_export_request(message)
+        export_query_message = (
+            weather_query_text(message) if export_request.requested else message
+        )
+        parsed_export_query = (
+            parse_query(export_query_message) if export_request.requested else None
+        )
+        references_previous_weather = bool(
+            export_request.requested
+            and re.search(r"刚才|上次|之前|这个|这些|它|最近", message)
+        )
+        if export_request.requested and export_request.format is None:
+            response_payload = export_prompt_payload(
+                session_id,
+                "请选择导出格式：Word、Excel、PDF 或 Markdown。",
+            )
+            record_visible_exchange_for_request(store, session_id, message, response_payload)
+            return jsonify(response_payload)
+        if (
+            export_request.requested
+            and parsed_export_query is not None
+            and (
+                not parsed_export_query.location_terms
+                or references_previous_weather
+            )
+        ):
+            if previous_context and previous_context.weather_snapshots:
+                response_payload = create_export_payload(
+                    session_id,
+                    previous_context.weather_snapshots,
+                    export_request.format or "md",
+                    export_store,
+                )
+            else:
+                response_payload = export_prompt_payload(
+                    session_id,
+                    "还没有可导出的天气数据，请先查询天气。",
+                )
+            record_visible_exchange_for_request(store, session_id, message, response_payload)
+            return jsonify(response_payload)
+
+        pending_export_format = (
+            export_request.format if export_request.requested else None
+        )
         regional_query = parse_regional_weather_query(
             message,
             previous_scope=(previous_context.regional_scope if previous_context else ""),
@@ -447,8 +512,13 @@ def create_app(
 
         grounding_required = _requires_weather_grounding(message, previous_context)
 
-        with llm_lock:
-            active_llm = llm_state["client"]
+        llm_id = body.get("llm_id")
+        if llm_id is not None and not isinstance(llm_id, str):
+            return _error_response("INVALID_LLM", "请选择有效的 AI 模型配置。", 422)
+        try:
+            active_llm = llm_registry.client_for(llm_id)
+        except LLMRegistryError:
+            return _error_response("INVALID_LLM", "没有找到该 AI 模型配置。", 422)
         if active_llm is not None:
             agent_tool_contexts = []
 
@@ -528,8 +598,12 @@ def create_app(
                             if previous_context
                             else ()
                         ),
+                        weather_snapshots=(
+                            previous_context.weather_snapshots
+                            if previous_context
+                            else ()
+                        ),
                     )
-                store.set_context(session_id, context)
                 response_payload = _agent_response_payload(
                     session_id=session_id,
                     provider=provider,
@@ -538,6 +612,20 @@ def create_app(
                     tool_results=agent_result.tool_results,
                     tool_inputs=agent_result.tool_inputs,
                 )
+                if agent_result.tool_results:
+                    snapshots = snapshots_from_results(
+                        response_payload.get("results", ()), _provider_name(provider)
+                    )
+                    context = replace(context, weather_snapshots=snapshots)
+                    if pending_export_format:
+                        response_payload = attach_export(
+                            response_payload,
+                            session_id,
+                            snapshots,
+                            pending_export_format,
+                            export_store,
+                        )
+                store.set_context(session_id, context)
                 record_visible_exchange_for_request(
                     store,
                     session_id,
@@ -562,7 +650,7 @@ def create_app(
                 422,
             )
 
-        parsed = parse_query(message)
+        parsed = parse_query(export_query_message)
         intent = fallback_intent
         if intent == FOLLOW_UP:
             intent = previous_context.intent if previous_context else BRIEF
@@ -646,6 +734,9 @@ def create_app(
                 intent=intent,
                 offered_full_weather=intent == OUTING,
                 messages=previous_context.messages if previous_context else (),
+                weather_snapshots=snapshots_from_results(
+                    weather_results, _provider_name(provider)
+                ),
             ),
         )
         first_result = weather_results[0]
@@ -661,6 +752,14 @@ def create_app(
             "weather": first_result["weather"],
             "results": weather_results,
         }
+        if pending_export_format:
+            response_payload = attach_export(
+                response_payload,
+                session_id,
+                snapshots_from_results(weather_results, _provider_name(provider)),
+                pending_export_format,
+                export_store,
+            )
         record_visible_exchange_for_request(
             store,
             session_id,
@@ -874,41 +973,6 @@ def _provider_statuses(clients: Dict[str, WeatherProvider], lock: RLock):
         }
         for provider in PROVIDER_CATALOG
     ]
-
-
-def _llm_status(llm_state, lock: RLock):
-    with lock:
-        client = llm_state["client"]
-    if client is None:
-        return {"configured": False, "provider": None, "model": None}
-    return {
-        "configured": True,
-        "provider": client.display_name,
-        "model": client.model,
-    }
-
-
-def _build_runtime_llm(body: Dict[str, object]) -> OpenAICompatibleClient:
-    provider_id = body.get("provider")
-    provider = next(
-        (item for item in LLM_PROVIDER_CATALOG if item["id"] == provider_id),
-        None,
-    )
-    if provider is None:
-        raise ValueError("unknown LLM provider")
-    model = body.get("model")
-    api_key = body.get("api_key")
-    if not isinstance(model, str) or not isinstance(api_key, str):
-        raise ValueError("invalid LLM fields")
-    base_url = body.get("base_url") if provider_id == "custom" else provider["base_url"]
-    if not isinstance(base_url, str):
-        raise ValueError("custom LLM base URL is required")
-    return OpenAICompatibleClient(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        display_name=provider["name"],
-    )
 
 
 def _require_local_request():

@@ -97,3 +97,11 @@ parser + session_store + weather_client → /chat
 - [x] 增加和风天气 v1 实时天气和每日预报客户端。
 - [x] 允许通过 `WEATHER_PROVIDER` 或请求 `provider` 选择服务。
 - [x] 验证 API Host 白名单、第三方响应字段和统一错误语义。
+
+## Export and AI Model Profiles Upgrade
+
+1. 保存最近一次结构化天气快照，识别自然语言导出意图并实现有界临时下载存储。
+2. 生成 DOCX、XLSX、PDF、Markdown，并通过重开与渲染检查文件有效性。
+3. 将单一 AI 客户端替换为线程安全的多配置注册表，补充常见模型服务预设和切换 API。
+4. 在配置页展示已保存模型，在聊天页增加 AI 选择器，并只持久化天气 provider ID 与模型配置 ID。
+5. 完成焦点测试、完整回归、浏览器验证、安全审查和部署文档更新。

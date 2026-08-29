@@ -11,6 +11,7 @@ from regional_weather import (
     search_regional_weather,
 )
 from session_store import ConversationContext, ConversationMessage
+from weather_export import WeatherSnapshot
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,20 @@ def build_regional_chat_outcome(
         messages=messages,
         regional_scope=query.scope,
         regional_phenomena=query.phenomena,
+        weather_snapshots=tuple(
+            WeatherSnapshot(
+                city=item.city.name,
+                date_label="今天",
+                provider="Open-Meteo",
+                temperature_c=item.weather.temperature_c,
+                condition=item.weather.condition,
+                humidity_percent=item.weather.humidity_percent,
+                wind_speed_mps=item.weather.wind_speed_mps,
+                rain_expected=item.weather.rain_expected,
+                advice=None,
+            )
+            for item in regional_result.matches
+        ) or (previous_context.weather_snapshots if previous_context else ()),
     )
     payload = {
         "session_id": session_id,

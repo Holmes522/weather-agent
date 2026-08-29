@@ -402,6 +402,31 @@ a:focus-visible {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 10px;
+  max-width: 220px;
+}
+
+.export-bubble {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.export-download-link {
+  min-height: 38px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  color: #ffffff;
+  background: var(--blue-deep);
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.export-download-link:hover {
+  background: var(--blue);
 }
 
 .chat-panel {
@@ -870,6 +895,9 @@ a:focus-visible {
   .topbar {
     min-height: 68px;
     padding: 10px 14px;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 9px;
   }
 
   .service-status,
@@ -878,11 +906,25 @@ a:focus-visible {
   }
 
   .topbar-actions {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 8px;
   }
 
+  .provider-control {
+    min-width: 0;
+  }
+
   .provider-control select {
-    width: min(38vw, 140px);
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .conversation-heading {
+    width: 100%;
   }
 
   .conversation-heading span {
@@ -890,7 +932,7 @@ a:focus-visible {
   }
 
   .conversation-heading strong {
-    max-width: 34vw;
+    max-width: calc(100vw - 82px);
   }
 
   .welcome {

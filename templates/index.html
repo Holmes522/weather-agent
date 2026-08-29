@@ -80,6 +80,18 @@
               {% endfor %}
             </select>
           </label>
+          <label class="provider-control" for="llm-select">
+            <span>AI 模型</span>
+            <select id="llm-select" name="llm">
+              {% if not llm_profiles %}
+              <option value="" selected>天气模式（未配置 AI）</option>
+              {% else %}
+                {% for profile in llm_profiles %}
+                <option value="{{ profile.id }}"{% if profile.active %} selected{% endif %}>{{ profile.provider }} · {{ profile.model }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </label>
         </div>
         </header>
 

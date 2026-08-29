@@ -17,6 +17,9 @@
   const llmResult = document.querySelector("#llm-config-result");
   const llmSubmit = document.querySelector("#save-llm-button");
   const llmStatus = document.querySelector("#llm-status");
+  const llmProfileList = document.querySelector("#llm-profile-list");
+  const llmProfileEmpty = document.querySelector("#llm-profile-empty");
+  const LLM_PROFILE_STORAGE_KEY = "weather-agent.llm-profile";
 
   function updateConditionalFields() {
     const needsHost = providerSelect.value === "qweather";
@@ -110,8 +113,14 @@
     }
 
     const placeholders = {
+      openai: "例如 gpt-5-mini",
       deepseek: "例如 deepseek-v4-flash",
       openrouter: "例如 openai/gpt-4.1-mini",
+      glm: "例如 glm-5-flash",
+      kimi: "例如 kimi-k2.5",
+      qwen: "例如 qwen-plus",
+      doubao: "填写火山方舟控制台中的模型或接入点 ID",
+      gemini: "例如 gemini-2.5-flash",
       ollama: "例如 qwen3:8b（需先在本机拉取）",
     };
     llmModel.placeholder = placeholders[llmProvider.value] || "输入服务控制台中的模型 ID";
@@ -127,6 +136,64 @@
   }
 
   llmProvider.addEventListener("change", updateLlmFields);
+
+  function rememberLlmProfile(profileId) {
+    try {
+      window.localStorage.setItem(LLM_PROFILE_STORAGE_KEY, profileId);
+    } catch (_error) {
+      // 浏览器禁止存储时，服务端当前配置仍然有效。
+    }
+  }
+
+  function renderLlmProfiles(models) {
+    llmProfileList.replaceChildren();
+    llmProfileEmpty.hidden = models.length > 0;
+    models.forEach((profile) => {
+      const item = document.createElement("li");
+      item.className = `llm-profile-item${profile.active ? " is-active" : ""}`;
+      item.dataset.llmProfileId = profile.id;
+      const copy = document.createElement("span");
+      const provider = document.createElement("strong");
+      provider.textContent = profile.provider;
+      const model = document.createElement("small");
+      model.textContent = profile.model;
+      copy.append(provider, model);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.activateLlm = profile.id;
+      button.disabled = profile.active;
+      button.textContent = profile.active ? "当前使用" : "切换使用";
+      item.append(copy, button);
+      llmProfileList.appendChild(item);
+    });
+  }
+
+  llmProfileList.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-activate-llm]");
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/llm/active", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: button.dataset.activateLlm }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.llm) {
+        throw new Error(body?.error?.message || "模型切换失败，请重试。");
+      }
+      renderLlmProfiles(body.models || []);
+      llmStatus.textContent = `${body.llm.provider} · ${body.llm.model}`;
+      rememberLlmProfile(body.llm.id);
+      llmResult.textContent = "已切换当前 AI 模型。";
+      llmResult.dataset.state = "success";
+    } catch (error) {
+      llmResult.textContent = error instanceof Error ? error.message : "模型切换失败，请重试。";
+      llmResult.dataset.state = "error";
+      button.disabled = false;
+    }
+  });
+
   llmForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     llmResult.textContent = "";
@@ -156,7 +223,9 @@
       llmApiKey.value = "";
       llmStatus.textContent = `${body.llm.provider} · ${body.llm.model}`;
       llmStatus.classList.add("is-configured");
-      llmResult.textContent = "AI 模型已连接，返回聊天页即可进行通用对话。";
+      renderLlmProfiles(body.models || []);
+      rememberLlmProfile(body.llm.id);
+      llmResult.textContent = "AI 模型已保存并设为当前模型，返回聊天页即可使用。";
       llmResult.dataset.state = "success";
     } catch (error) {
       const safeMessage =

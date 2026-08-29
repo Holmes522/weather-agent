@@ -58,15 +58,14 @@ def test_runtime_llm_status_does_not_expose_api_key():
     )
 
     assert response.status_code == 201
-    assert response.get_json() == {
-        "llm": {
-            "configured": True,
-            "provider": "OpenAI",
-            "model": "gpt-4.1-mini",
-        }
-    }
+    body = response.get_json()
+    assert body["llm"]["configured"] is True
+    assert body["llm"]["provider"] == "OpenAI"
+    assert body["llm"]["model"] == "gpt-4.1-mini"
+    assert body["llm"]["id"]
+    assert body["models"] == [{**body["llm"], "active": True}]
     status = http.get("/api/llm")
-    assert status.get_json() == response.get_json()
+    assert status.get_json() == body
     assert "runtime-model-secret" not in status.get_data(as_text=True)
 
 
@@ -78,6 +77,46 @@ def test_runtime_ollama_configuration_does_not_require_api_key():
 
     assert response.status_code == 201
     assert response.get_json()["llm"]["provider"] == "Ollama（本机）"
+
+
+def test_runtime_llm_configuration_keeps_previous_models_and_can_switch():
+    http = local_app().test_client()
+    first = http.post(
+        "/api/llm",
+        json={"provider": "openai", "model": "gpt-test", "api_key": "secret-1"},
+    ).get_json()["llm"]
+    second_response = http.post(
+        "/api/llm",
+        json={"provider": "kimi", "model": "kimi-test", "api_key": "secret-2"},
+    )
+
+    assert second_response.status_code == 201
+    second = second_response.get_json()
+    assert [item["id"] for item in second["models"]] == [first["id"], second["llm"]["id"]]
+    switched = http.patch("/api/llm/active", json={"id": first["id"]})
+    assert switched.status_code == 200
+    assert switched.get_json()["llm"]["id"] == first["id"]
+    assert sum(item["active"] for item in switched.get_json()["models"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("provider", "provider_name"),
+    [
+        ("glm", "智谱 GLM"),
+        ("kimi", "Moonshot Kimi"),
+        ("qwen", "通义千问"),
+        ("doubao", "豆包（火山方舟）"),
+        ("gemini", "Google Gemini"),
+    ],
+)
+def test_common_llm_provider_presets_are_supported(provider, provider_name):
+    response = local_app().test_client().post(
+        "/api/llm",
+        json={"provider": provider, "model": f"{provider}-test", "api_key": "secret"},
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["llm"]["provider"] == provider_name
 
 
 @pytest.mark.parametrize(
@@ -131,3 +170,26 @@ def test_settings_page_renders_llm_configuration_form():
     assert 'id="llm-model"' in html
     assert 'id="llm-api-key"' in html
     assert 'id="llm-base-url"' in html
+    assert 'id="llm-profile-list"' in html
+    assert "智谱 GLM" in html
+    assert "Moonshot Kimi" in html
+    assert "通义千问" in html
+    assert "豆包（火山方舟）" in html
+    assert "Google Gemini" in html
+
+
+def test_home_renders_model_selector_and_non_secret_storage_contract():
+    http = local_app().test_client()
+    configured = http.post(
+        "/api/llm",
+        json={"provider": "openai", "model": "gpt-test", "api_key": "secret"},
+    ).get_json()["llm"]
+
+    html = http.get("/").get_data(as_text=True)
+    script = http.get("/static/app.js").get_data(as_text=True)
+
+    assert 'id="llm-select"' in html
+    assert configured["id"] in html
+    assert "weather-agent.weather-provider" in script
+    assert "weather-agent.llm-profile" in script
+    assert "api_key" not in script

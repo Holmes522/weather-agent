@@ -92,6 +92,50 @@ def test_configured_model_can_answer_general_chat_without_weather():
     assert weather.calls == []
 
 
+def test_chat_can_select_a_saved_model_profile_by_id():
+    first_model = FakeLLMClient([AssistantTurn("由第一个模型回答。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=first_model,
+    )
+    http = app.test_client()
+    first_id = http.get("/api/llm").get_json()["llm"]["id"]
+    http.post(
+        "/api/llm",
+        json={"provider": "kimi", "model": "kimi-test", "api_key": "secret"},
+    )
+
+    response = http.post(
+        "/chat",
+        json={
+            "message": "你好",
+            "session_id": "selected-model",
+            "llm_id": first_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["answer"] == "由第一个模型回答。"
+    assert len(first_model.calls) == 1
+
+
+def test_chat_rejects_unknown_model_profile_id():
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=FakeLLMClient([AssistantTurn("unused")]),
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "你好", "session_id": "bad-model", "llm_id": "missing"},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_LLM"
+
+
 def test_regional_live_weather_is_grounded_before_the_configured_model():
     weather = FakeWeatherClient()
     regional = FakeRegionalWeatherClient()

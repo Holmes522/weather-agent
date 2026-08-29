@@ -7,6 +7,7 @@
   const chatLog = document.querySelector("#chat-log");
   const welcomePanel = document.querySelector("#welcome-panel");
   const providerSelect = document.querySelector("#provider-select");
+  const llmSelect = document.querySelector("#llm-select");
   const sidebar = document.querySelector("#conversation-sidebar");
   const sidebarToggle = document.querySelector("#sidebar-toggle");
   const sidebarBackdrop = document.querySelector("#sidebar-backdrop");
@@ -20,6 +21,32 @@
   let conversations = [];
   let pending = false;
   let pendingDeleteId = null;
+  const WEATHER_PROVIDER_STORAGE_KEY = "weather-agent.weather-provider";
+  const LLM_PROFILE_STORAGE_KEY = "weather-agent.llm-profile";
+
+  function readStoredSelection(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function storeSelection(key, value) {
+    try {
+      if (value) window.localStorage.setItem(key, value);
+      else window.localStorage.removeItem(key);
+    } catch (_error) {
+      // 隐私模式或浏览器策略可能禁用 localStorage；不影响当前页面使用。
+    }
+  }
+
+  function restoreSelect(select, storageKey) {
+    const saved = readStoredSelection(storageKey);
+    if (saved && Array.from(select.options).some((option) => option.value === saved)) {
+      select.value = saved;
+    }
+  }
 
   function createSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -121,6 +148,7 @@
   function appendAgentResponse(payload) {
     if (payload.display_mode === "text") {
       appendAgentText(payload.answer);
+      appendExportDownload(payload.export);
       return;
     }
     if (payload.mode === "agent") appendAgentText(payload.answer);
@@ -134,6 +162,23 @@
         weather: result.weather || payload.weather,
       });
     });
+    appendExportDownload(payload.export);
+  }
+
+  function appendExportDownload(exportInfo) {
+    if (!exportInfo || typeof exportInfo !== "object") return;
+    const url = typeof exportInfo.download_url === "string" ? exportInfo.download_url : "";
+    if (!/^\/api\/exports\/[0-9a-f]{32}$/.test(url)) return;
+    const item = createElement("li", "message message-agent export-message");
+    const panel = createElement("div", "message-bubble export-bubble");
+    panel.appendChild(createElement("strong", "", "天气报告已就绪"));
+    const link = createElement("a", "export-download-link", "下载文件");
+    link.href = url;
+    link.download = typeof exportInfo.filename === "string" ? exportInfo.filename : "天气报告";
+    panel.appendChild(link);
+    item.appendChild(panel);
+    chatLog.appendChild(item);
+    scrollToLatest();
   }
 
   function appendMetric(list, label, value) {
@@ -207,6 +252,7 @@
     input.disabled = value;
     sendButton.disabled = value;
     providerSelect.disabled = value;
+    llmSelect.disabled = value || !llmSelect.value;
     newConversationButton.disabled = value;
     conversationList.setAttribute("aria-busy", String(value));
     sendButton.querySelector("span:first-child").textContent = value ? "思考中" : "发送";
@@ -385,7 +431,12 @@
       const response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, session_id: sessionId, provider: providerSelect.value }),
+        body: JSON.stringify({
+          message,
+          session_id: sessionId,
+          provider: providerSelect.value,
+          ...(llmSelect.value ? { llm_id: llmSelect.value } : {}),
+        }),
       });
       const payload = await response.json().catch(() => null);
       loadingMessage.remove();
@@ -437,6 +488,26 @@
     const message = input.value.trim();
     if (message) void sendMessage(message);
   });
+  providerSelect.addEventListener("change", () => {
+    storeSelection(WEATHER_PROVIDER_STORAGE_KEY, providerSelect.value);
+  });
+  llmSelect.addEventListener("change", async () => {
+    const selectedId = llmSelect.value;
+    if (!selectedId) return;
+    llmSelect.disabled = true;
+    try {
+      await requestJson("/api/llm/active", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedId }),
+      });
+      storeSelection(LLM_PROFILE_STORAGE_KEY, selectedId);
+    } catch (error) {
+      appendError(error.message);
+    } finally {
+      llmSelect.disabled = pending;
+    }
+  });
   input.addEventListener("input", resizeInput);
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -478,5 +549,7 @@
     });
   });
 
+  restoreSelect(providerSelect, WEATHER_PROVIDER_STORAGE_KEY);
+  restoreSelect(llmSelect, LLM_PROFILE_STORAGE_KEY);
   void initializeConversations();
 })();

@@ -267,6 +267,83 @@
   border-left: 3px solid var(--blue);
 }
 
+.llm-profiles {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-heading h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.profile-heading span,
+.llm-profile-empty {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.llm-profile-list {
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.llm-profile-item {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f6f9fb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.llm-profile-item.is-active {
+  background: #edf8f3;
+  border-color: #b7dfcc;
+}
+
+.llm-profile-item strong,
+.llm-profile-item small {
+  display: block;
+}
+
+.llm-profile-item small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.llm-profile-item button {
+  min-height: 34px;
+  padding: 0 11px;
+  color: var(--blue-deep);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.llm-profile-item button:disabled {
+  color: #237a55;
+  cursor: default;
+}
+
+.llm-profile-empty {
+  margin: 12px 0 0;
+}
+
 .privacy-note strong {
   font-size: 0.8rem;
 }

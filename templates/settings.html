@@ -160,6 +160,27 @@
           </button>
         </form>
 
+        <section class="llm-profiles" aria-labelledby="llm-profiles-title">
+          <div class="profile-heading">
+            <h3 id="llm-profiles-title">已保存模型</h3>
+            <span>仅当前 Python 进程</span>
+          </div>
+          <ul class="llm-profile-list" id="llm-profile-list" aria-live="polite">
+            {% for profile in llm_profiles %}
+            <li class="llm-profile-item{% if profile.active %} is-active{% endif %}" data-llm-profile-id="{{ profile.id }}">
+              <span>
+                <strong>{{ profile.provider }}</strong>
+                <small>{{ profile.model }}</small>
+              </span>
+              <button type="button" data-activate-llm="{{ profile.id }}"{% if profile.active %} disabled{% endif %}>
+                {% if profile.active %}当前使用{% else %}切换使用{% endif %}
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="llm-profile-empty" id="llm-profile-empty"{% if llm_profiles %} hidden{% endif %}>还没有保存 AI 模型。</p>
+        </section>
+
         <aside class="privacy-note">
           <strong>对话隐私与费用</strong>
           <p>配置后，聊天消息和最近的有限对话历史会发送给你选择的模型服务。Key 仅保存在当前 Python 进程内存中；请同时关注对应服务的隐私政策、调用额度和账单。</p>

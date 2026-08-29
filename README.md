@@ -8,6 +8,7 @@
 - 支持同一会话追问：`那后天呢？`，以及在建议后回复 `需要` 查看完整天气。
 - 支持区域天气现象追问：先问全国哪里在打雷下雨，再问 `湖南省有哪些地方？`，系统会继承雷雨条件并缩小到湖南。
 - 网页左侧提供历史对话栏，可新建、切换、恢复和删除对话；手机端显示为抽屉。
+- 可把最近一次真实天气结果导出为 Word、Excel、PDF 或 Markdown，并在聊天中直接下载。
 - 只有明确询问完整天气时才显示天气卡；湿度、温度、风、降雨和出行问题只回答对应内容。
 - 常用城市使用本地坐标，其他全球城市通过 Nominatim 动态解析并缓存结果。
 - 支持已确认的常见城市错别字，例如把 `大利` 纠正为 `大理`。
@@ -16,7 +17,8 @@
 - 提供仅限本机访问的 API 配置页，可在运行期间新增或更新天气服务凭据。
 - 返回摄氏温度、天气状况、湿度、风速、是否预期下雨，以及明天的简单建议。
 - 一次请求最多提取 5 个城市，并按用户输入顺序返回结果。
-- 可选连接 OpenAI、DeepSeek、OpenRouter、本机 Ollama 或自定义 OpenAI 兼容接口。
+- 可选连接 OpenAI、DeepSeek、OpenRouter、智谱 GLM、Kimi、通义千问、豆包、Gemini、本机 Ollama 或自定义 OpenAI 兼容接口。
+- 本机配置页可同时保存最多 20 个 AI 模型配置并自由切换；新增模型不会覆盖旧模型。
 - AI 模型只拥有 `get_weather` 工具；不能执行命令、浏览网页、读写文件或控制电脑。
 - 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多调用两次天气工具。
 
@@ -27,6 +29,10 @@
 ├── app.py
 ├── agent.py
 ├── llm_client.py
+├── llm_registry.py
+├── weather_export.py
+├── export_store.py
+├── export_chat.py
 ├── config.py
 ├── conversation.py
 ├── geocoding.py
@@ -115,10 +121,11 @@ python app.py
 
 保持 Flask 运行，在浏览器打开 <http://127.0.0.1:5000/settings>，找到“连接 AI 模型”：
 
-1. 选择 OpenAI、DeepSeek、OpenRouter、本机 Ollama 或自定义兼容接口；
+1. 选择 OpenAI、DeepSeek、OpenRouter、智谱 GLM、Moonshot Kimi、通义千问、豆包、Google Gemini、本机 Ollama 或自定义兼容接口；
 2. 输入该服务实际存在且支持工具调用的模型 ID；
 3. 在线服务输入 API Key；Ollama 本机模式不需要真实 Key；
-4. 保存后返回聊天页，页面显示“AI 对话已开启”。
+4. 保存后新模型会成为当前模型，但以前保存的模型仍显示在“已保存模型”中，可以随时切换；
+5. 返回聊天页后，右上角“AI 模型”下拉框也可切换当前模型。
 
 例如使用 DeepSeek 环境变量持久配置：
 
@@ -142,13 +149,17 @@ python app.py
 
 外部自定义模型地址必须使用 HTTPS；只有 `localhost`、`127.0.0.1` 或 `::1` 可以使用 HTTP。选择的模型必须支持 OpenAI 风格的 Chat Completions 和 function/tool calling。
 
+Claude 官方直连接口不是 OpenAI Chat Completions 协议，因此本版本不伪装成直连预设；如需使用 Claude，可在 OpenRouter 中填写对应 Claude 模型 ID，或使用受信任的 OpenAI 兼容网关。
+
 ## 使用可视化平台
 
 保持运行 `python app.py` 的 PowerShell 窗口不要关闭，然后在浏览器打开：
 
 <http://127.0.0.1:5000>
 
-在输入框中可以直接询问完整天气、单项指标或出行建议。启用 AI 后还可以进行基础问答、解释、写作和总结；天气问题会自动调用真实数据源。左侧可以新建、切换和删除历史对话，切换后会恢复用户消息、AI 文本与天气卡片；手机端点击左上角菜单按钮打开历史抽屉。后端最多给模型使用最近 12 条普通对话消息，并为每个会话单独记住天气上下文。右上角的数据源下拉框可以自由切换；Open-Meteo 始终可用，其他数据源在配置对应凭据后显示。
+在输入框中可以直接询问完整天气、单项指标或出行建议。启用 AI 后还可以进行基础问答、解释、写作和总结；天气问题会自动调用真实数据源。左侧可以新建、切换和删除历史对话，切换后会恢复用户消息、AI 文本、天气卡片和导出下载入口；手机端点击左上角菜单按钮打开历史抽屉。后端最多给模型使用最近 12 条普通对话消息，并为每个会话单独记住天气上下文。右上角可以自由切换天气数据源和已保存的 AI 模型；浏览器只记住这两个非敏感 ID，API Key 不会写入浏览器存储。
+
+天气导出示例：先问 `深圳和广州明天天气怎么样？`，再问 `把刚才天气导出为 Excel`；也可以一句话发送 `把深圳和广州明天天气导出为 PDF`。支持 `Word`/`docx`、`Excel`/`xlsx`/`execl`、`PDF` 和 `Markdown`/`md`。导出链接保存在当前服务进程中，约 1 小时后失效。
 
 点击聊天页左下角的“配置 Agent”，或直接打开 <http://127.0.0.1:5000/settings>，可以配置天气数据源与 AI 模型。Key 只发送到本机 Flask，保存在当前 Python 进程内存中，不写入浏览器、本地文件、日志或 Git；重启 Flask 后运行时配置会清空。配置页和配置接口只允许从 `127.0.0.1` 或 `::1` 访问。
 
@@ -203,6 +214,10 @@ curl -X POST http://127.0.0.1:5000/chat \
 `provider` 也是可选字段：未传时使用 `WEATHER_PROVIDER`，可选值为 `openmeteo`、`openweather`、`qweather`、`weatherapi` 或 `visualcrossing`。`openmeteo` 无需凭据；其他 Provider 只有配置对应凭据后才能选择。
 
 配置模型后，成功响应增加 `mode: "agent"`、`model` 和 `tool_used`。普通聊天只返回文本；天气工具调用仍返回兼容的 `city`、`weather` 与 `results`。未配置模型时，非天气消息返回 `AI_NOT_CONFIGURED`，不会把普通问题误当成城市查询。
+
+本机模型配置接口为：`GET /api/llm` 列出已保存模型，`POST /api/llm` 新增并设为当前模型，`PATCH /api/llm/active` 按安全配置 ID 切换。`POST /chat` 可选传入 `llm_id`。这些接口从不返回 API Key，生产环境会关闭配置接口。
+
+导出成功时响应增加 `export.format`、`export.filename` 和 `export.download_url`。下载地址为同源 `GET /api/exports/<随机ID>`，返回附件且禁止缓存。
 
 区域查询使用无需 Key 的 Open-Meteo 多坐标当前天气接口，与页面当前选择的单城市天气 Provider 相互独立。例如：
 
@@ -262,6 +277,8 @@ python app.py
 - 会话状态和左侧历史只在当前 Python 进程内存中；每个匿名浏览器最多保留最近 100 段会话、每段最近 100 条展示消息。重启服务或使用多进程部署后不会共享，也不能跨浏览器或跨设备同步。匿名 Cookie 只用于区分浏览器，不等同于登录认证。生产化时应增加账户系统，并把 `InMemorySessionStore` 替换成数据库或 Redis 等实现。
 - 通过网页新增的 Provider 凭据同样只保存在当前进程内存中；配置页是本地开发功能，不应直接暴露到公网。
 - 普通聊天能力取决于用户配置的第三方模型；消息和最近有限历史会发送给该服务，费用与数据处理规则以对应服务为准。
+- 运行时新增的天气服务和 AI 模型配置只保存在当前进程；浏览器只保存选择 ID，重启 Flask 后需要重新添加。环境变量模型会在启动时自动恢复。
+- 导出文件最多包含 5 条天气记录，单文件最多 2 MiB；临时下载存储有数量上限并约 1 小时过期，不适合作为长期文件存储。
 - Agent 当前只有只读天气工具，不具备 Codex 或 Claude Code 的文件、终端、网页浏览和代码执行能力。
 - 工具只支持今天、明天和后天；每轮最多两次工具调用，模型回复最多 4000 字符。
 - 当 `APP_ENV=production` 时，配置页和配置接口直接返回 404；天气凭据必须通过托管平台的环境变量设置。
@@ -290,6 +307,11 @@ python app.py
 - Nominatim Search API：<https://nominatim.org/release-docs/latest/api/Search/>
 - Nominatim 公共服务使用策略：<https://operations.osmfoundation.org/policies/nominatim/>
 - OpenAI function calling：<https://developers.openai.com/api/docs/guides/function-calling>
+- 智谱 GLM Chat Completions：<https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5>
+- Moonshot Kimi API：<https://platform.kimi.com/docs/api/overview>
+- 阿里云百炼 OpenAI 兼容 API：<https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions>
+- 火山方舟 Chat Completions：<https://www.volcengine.com/docs/82379/1494384>
+- Gemini OpenAI 兼容接口：<https://ai.google.dev/gemini-api/docs/openai>
 - DeepSeek tool calls：<https://api-docs.deepseek.com/guides/tool_calls/>
 - OpenRouter tool calling：<https://openrouter.ai/docs/guides/features/tool-calling>
 - Ollama OpenAI compatibility：<https://docs.ollama.com/api/openai-compatibility>
