@@ -26,7 +26,8 @@
 ## Project Structure
 
 - `session_store.py`：会话元数据、展示消息、上下文和线程安全 CRUD。
-- `app.py`：匿名浏览器 Cookie、REST 会话接口、成功回复归档。
+- `conversation_history.py`：匿名浏览器 Cookie、REST 会话接口和成功回复归档。
+- `app.py`：把聊天回复交给历史模块保存，同时保持 `/chat` 兼容。
 - `templates/index.html`：侧边栏和移动端控制按钮。
 - `static/app.js`：加载、新建、切换、删除和重放历史消息。
 - `static/styles.css`：桌面双栏与移动抽屉布局。
@@ -40,7 +41,7 @@
 
 ## Boundaries
 
-- Always：服务端校验会话 ID；按匿名 Cookie 隔离；输出用 `textContent`；限制会话和消息数量；删除同时清理天气上下文。
+- Always：服务端校验会话 ID；按匿名 Cookie 隔离；输出用 `textContent`；每个匿名浏览器最多保留最近 100 段会话和每段最近 100 条展示消息；删除或淘汰时同时清理天气上下文。
 - Ask first：引入数据库、账户登录、跨设备同步、导出或分享会话。
 - Never：把聊天历史放进 URL；使用 `innerHTML` 渲染消息；把匿名 ID 当成真正身份认证；把其他浏览器的会话返回给当前请求。
 
