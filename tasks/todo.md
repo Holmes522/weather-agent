@@ -19,3 +19,4 @@
 - [x] Task 17: 会话存储与 REST 契约；验证：`pytest tests/test_session_store.py tests/test_conversation_history.py`
 - [x] Task 18: 历史侧边栏与响应式交互；验证：页面契约测试、`node --check static/app.js` 和浏览器检查
 - [x] Task 19: 文档、完整回归、安全审查与远端 CI；验证：`pytest -q`
+- [x] Task 20: 区域降雨/雷雨批量搜索与省份上下文继承；验证：`pytest tests/test_regional_weather.py tests/test_app.py tests/test_ai_chat.py`

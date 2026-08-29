@@ -36,12 +36,10 @@ from geocoding import (
 )
 from parser import SUPPORTED_CITIES, parse_query
 from rate_limiter import InMemoryRateLimiter
+from regional_chat import build_regional_chat_outcome
 from regional_weather import (
-    REGIONAL_WEATHER_INTENT,
     RegionalWeatherProvider,
-    build_regional_weather_answer,
     parse_regional_weather_query,
-    search_regional_weather,
 )
 from session_store import (
     ConversationContext,
@@ -428,54 +426,20 @@ def create_app(
         )
         if regional_query is not None:
             try:
-                regional_result = search_regional_weather(
-                    regional_client, regional_query
+                regional_outcome = build_regional_chat_outcome(
+                    provider=regional_client,
+                    query=regional_query,
+                    session_id=session_id,
+                    user_message=message,
+                    previous_context=previous_context,
+                    max_history_messages=MAX_HISTORY_MESSAGES,
                 )
             except WeatherClientError:
                 return _error_response(
                     "WEATHER_UNAVAILABLE", "天气服务暂时不可用，请稍后重试。", 502
                 )
-
-            answer = build_regional_weather_answer(regional_result)
-            results = [
-                {
-                    "city": item.city.name,
-                    "date": "今天",
-                    "corrected_from": None,
-                    "answer": f"{item.city.name}当前为{item.weather.condition}。",
-                    "weather": _weather_payload(item.weather, None),
-                }
-                for item in regional_result.matches
-            ]
-            previous_messages = previous_context.messages if previous_context else ()
-            messages = (
-                *previous_messages,
-                ConversationMessage("user", message),
-                ConversationMessage("assistant", answer),
-            )[-MAX_HISTORY_MESSAGES:]
-            store.set_context(
-                session_id,
-                ConversationContext(
-                    cities=(),
-                    day_offset=0,
-                    date_label="今天",
-                    intent=REGIONAL_WEATHER_INTENT,
-                    messages=messages,
-                    regional_scope=regional_query.scope,
-                    regional_phenomena=regional_query.phenomena,
-                ),
-            )
-            response_payload = {
-                "session_id": session_id,
-                "provider": "openmeteo",
-                "intent": REGIONAL_WEATHER_INTENT,
-                "display_mode": "text",
-                "scope": regional_query.scope,
-                "phenomena": list(regional_query.phenomena),
-                "cities": [item.city.name for item in regional_result.matches],
-                "results": results,
-                "answer": answer,
-            }
+            store.set_context(session_id, regional_outcome.context)
+            response_payload = regional_outcome.payload
             record_visible_exchange_for_request(
                 store, session_id, message, response_payload
             )

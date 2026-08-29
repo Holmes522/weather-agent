@@ -4,8 +4,9 @@
 
 ## 功能
 
-- 支持示例：`深圳和广州明天天气什么样？`、`深圳明天出门要带什么？`。
+- 支持示例：`深圳和广州明天天气什么样？`、`深圳明天出门要带什么？`、`现在哪里在打雷下雨？`。
 - 支持同一会话追问：`那后天呢？`，以及在建议后回复 `需要` 查看完整天气。
+- 支持区域天气现象追问：先问全国哪里在打雷下雨，再问 `湖南省有哪些地方？`，系统会继承雷雨条件并缩小到湖南。
 - 网页左侧提供历史对话栏，可新建、切换、恢复和删除对话；手机端显示为抽屉。
 - 只有明确询问完整天气时才显示天气卡；湿度、温度、风、降雨和出行问题只回答对应内容。
 - 常用城市使用本地坐标，其他全球城市通过 Nominatim 动态解析并缓存结果。
@@ -31,6 +32,8 @@
 ├── geocoding.py
 ├── parser.py
 ├── rate_limiter.py
+├── regional_chat.py
+├── regional_weather.py
 ├── session_store.py
 ├── weather_client.py
 ├── wsgi.py
@@ -201,6 +204,18 @@ curl -X POST http://127.0.0.1:5000/chat \
 
 配置模型后，成功响应增加 `mode: "agent"`、`model` 和 `tool_used`。普通聊天只返回文本；天气工具调用仍返回兼容的 `city`、`weather` 与 `results`。未配置模型时，非天气消息返回 `AI_NOT_CONFIGURED`，不会把普通问题误当成城市查询。
 
+区域查询使用无需 Key 的 Open-Meteo 多坐标当前天气接口，与页面当前选择的单城市天气 Provider 相互独立。例如：
+
+```powershell
+$body = @{ message = "告诉我现在哪里在打雷下雨"; session_id = "storm-demo" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/chat" -ContentType "application/json; charset=utf-8" -Body $body
+
+$body = @{ message = "湖南省有哪些地方"; session_id = "storm-demo" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/chat" -ContentType "application/json; charset=utf-8" -Body $body
+```
+
+区域响应的 `intent` 为 `regional_weather`，并返回 `scope`、`phenomena`、匹配的 `cities` 和 `results`。即使当前没有匹配地点也会返回 200 和空列表，同时保留上下文供下一轮缩小范围。
+
 如果需要同时启用全部 Provider（Open-Meteo 会自动启用）：
 
 ```powershell
@@ -255,6 +270,7 @@ python app.py
 - 城市错别字纠正使用已确认别名表，避免把真实但不常见的地点误改成另一个城市；可在 `geocoding.py` 中审慎扩充。
 - OpenWeatherMap 的“明天/后天”按 3 小时预报聚合；和风天气使用每日预报中的目标日期条目。
 - Open-Meteo 使用当前天气和每日预报变量；非商业 API 无需 Key，商业使用应遵循其许可和客户 API 要求。
+- “哪里在下雨/打雷”是有界监测，不是全国实时雷达：全国范围覆盖省会及主要城市，湖南范围覆盖 14 个地级行政中心。回答会显示实际监测点数量，未纳入目录的县区或局地天气可能遗漏。
 - 和风天气 API Host 必须是控制台分配的 `*.qweatherapi.com` 主机名，不能包含 `https://` 或路径。
 
 ## 官方接口依据
