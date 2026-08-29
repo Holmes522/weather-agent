@@ -23,4 +23,4 @@
 - [x] Task 21: 天气快照与四格式导出；验证：`pytest tests/test_weather_export.py tests/test_weather_export_api.py`
 - [x] Task 22: 多 AI 模型配置注册表与常见服务预设；验证：`pytest tests/test_llm_config.py tests/test_llm_registry.py`
 - [x] Task 23: 聊天页/配置页选择、切换和浏览器记忆；验证：页面契约、`node --check`、真实浏览器
-- [ ] Task 24: 文件渲染、完整回归、安全审查、README 与远端 CI；验证：`pytest -q`
+- [x] Task 24: 文件渲染、完整回归、安全审查、README 与远端 CI；验证：`pytest -q`
