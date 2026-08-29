@@ -49,6 +49,15 @@ class FakeRegionalWeatherClient:
         )
 
 
+class RejectingCityResolver:
+    def __init__(self):
+        self.calls = []
+
+    def resolve(self, location):
+        self.calls.append(location)
+        raise AssertionError("capability questions must not trigger geocoding")
+
+
 def weather_tool_turn(city="深圳", day_offset=1, detail="advice"):
     return AssistantTurn(
         "",
@@ -69,7 +78,7 @@ def weather_tool_turn(city="深圳", day_offset=1, detail="advice"):
     )
 
 
-def test_configured_model_can_answer_general_chat_without_weather():
+def test_capability_question_returns_truthful_scope_without_model_guessing():
     weather = FakeWeatherClient()
     model = FakeLLMClient([AssistantTurn("你好，我可以陪你聊天，也可以帮你查天气。")])
     app = create_app(
@@ -84,12 +93,77 @@ def test_configured_model_can_answer_general_chat_without_weather():
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body["answer"].startswith("你好")
+    assert "全球城市" in body["answer"]
+    assert "Word、Excel、PDF 或 Markdown" in body["answer"]
     assert body["mode"] == "agent"
     assert body["model"] == "测试模型"
     assert body["tool_used"] is False
     assert body["display_mode"] == "text"
     assert weather.calls == []
+    assert model.calls == []
+
+
+def test_global_city_capability_question_does_not_trigger_weather_lookup():
+    weather = FakeWeatherClient()
+    resolver = RejectingCityResolver()
+    model = FakeLLMClient([weather_tool_turn(city="国外")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        city_resolver=resolver,
+        llm_client=model,
+    )
+
+    http = app.test_client()
+    for message in ("不可以查询国外的吗", "你能查询国外吗"):
+        response = http.post(
+            "/chat",
+            json={"message": message, "session_id": "global-capability"},
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert "全球城市" in body["answer"]
+        assert "Paris, France" in body["answer"]
+        assert body["tool_used"] is False
+    assert model.calls == []
+    assert resolver.calls == []
+    assert weather.calls == []
+
+
+def test_global_scope_in_a_general_question_is_not_mistaken_for_capabilities():
+    model = FakeLLMClient([AssistantTurn("可以关注雷克雅未克、特罗姆瑟等高纬度城市。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "国外有哪些城市能够看极光", "session_id": "aurora-chat"},
+    )
+
+    assert response.status_code == 200
+    assert "雷克雅未克" in response.get_json()["answer"]
+    assert len(model.calls) == 1
+
+
+def test_similar_phrase_about_cooking_is_not_mistaken_for_capabilities():
+    model = FakeLLMClient([AssistantTurn("我可以帮你规划一道番茄炒蛋。")])
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat", json={"message": "你能做什么饭", "session_id": "cooking-chat"}
+    )
+
+    assert response.status_code == 200
+    assert "番茄炒蛋" in response.get_json()["answer"]
+    assert len(model.calls) == 1
 
 
 def test_chat_can_select_a_saved_model_profile_by_id():

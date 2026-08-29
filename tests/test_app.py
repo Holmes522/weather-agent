@@ -266,6 +266,36 @@ def test_chat_resolves_city_outside_static_list(settings):
     assert client.calls == [("forecast", "纽约", 1)]
 
 
+def test_chat_resolves_english_city_with_country_qualifier(settings):
+    resolver = FakeCityResolver(
+        {
+            "Paris, France": CityResolution(
+                City("Paris, France", 48.8566, 2.3522, "FR")
+            )
+        }
+    )
+    client = FakeWeatherClient()
+    app = create_app(
+        settings=settings,
+        weather_client=client,
+        city_resolver=resolver,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={
+            "message": "What's the weather in Paris, France tomorrow?",
+            "session_id": "english-global-city",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["city"] == "Paris, France"
+    assert response.get_json()["date"] == "明天"
+    assert resolver.calls == ["Paris, France"]
+    assert client.calls == [("forecast", "Paris, France", 1)]
+
+
 def test_explicit_unknown_city_never_falls_back_to_previous_city(settings):
     resolver = FakeCityResolver({"不存在城": None})
     app = create_app(

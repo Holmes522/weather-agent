@@ -42,11 +42,21 @@ class ParsedQuery:
     date_is_explicit: bool = False
 
 
-_TIME_PATTERNS = (("后天", 2), ("明天", 1), ("今天", 0))
+_TIME_PATTERNS = (
+    (r"\bday\s+after\s+tomorrow\b", 2, "后天"),
+    ("后天", 2, "后天"),
+    (r"\btomorrow\b", 1, "明天"),
+    ("明天", 1, "明天"),
+    (r"\btoday\b", 0, "今天"),
+    ("今天", 0, "今天"),
+)
 _CITY_PATTERN = re.compile(
     "|".join(re.escape(city_name) for city_name in sorted(SUPPORTED_CITIES, key=len, reverse=True))
 )
-_DATE_PATTERN = re.compile("|".join(label for label, _offset in _TIME_PATTERNS))
+_DATE_PATTERN = re.compile(
+    "|".join(f"(?:{pattern})" for pattern, _offset, _label in _TIME_PATTERNS),
+    re.IGNORECASE,
+)
 _LOCATION_END_PATTERN = re.compile(
     r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|有雨|"
     r"出门|带伞|雨伞|带什么|穿什么|穿衣|适合|跑步|户外|运动"
@@ -60,6 +70,27 @@ _TRAILING_FILLER_PATTERN = re.compile(
     r"(?:会不会|是否|会|可能|的|呢|吗|如何|怎么样|什么样)+$"
 )
 _VALID_LOCATION_PATTERN = re.compile(r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40}$")
+_QUALIFIED_LOCATION_PATTERN = re.compile(
+    r"^[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40},\s*"
+    r"[\u3400-\u9fffA-Za-zÀ-ÖØ-öø-ÿ .'-]{2,40}$"
+)
+_ENGLISH_LOCATION_PATTERNS = (
+    re.compile(
+        r"^(?:what(?:'s| is)|how(?:'s| is))\s+(?:the\s+)?weather\s+"
+        r"(?:like\s+)?(?:in|for)\s+(.+?)\s*[?!.]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:weather|temperature|humidity|wind|rain)\s+(?:in|for)\s+"
+        r"(.+?)\s*[?!.]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(.+?)\s+(?:weather|temperature|humidity|wind|rain)\s*[?!.]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^will\s+it\s+rain\s+in\s+(.+?)\s*[?!.]*$", re.IGNORECASE),
+)
 _CONTEXT_ONLY_PATTERN = re.compile(
     r"^(?:需要|要|可以|好|好的|行|告诉我|请告诉我|看看|想看)[。！!？?]*$"
 )
@@ -76,8 +107,8 @@ def parse_query(message: str) -> ParsedQuery:
         None,
     )
 
-    for date_label, day_offset in _TIME_PATTERNS:
-        if date_label in message:
+    for time_pattern, day_offset, date_label in _TIME_PATTERNS:
+        if re.search(time_pattern, message, re.IGNORECASE):
             return ParsedQuery(city, day_offset, date_label, location_terms, True)
 
     return ParsedQuery(city, 0, "今天", location_terms, False)
@@ -93,12 +124,17 @@ def _extract_location_terms(message: str) -> Tuple[str, ...]:
     ):
         return ()
     text = _DATE_PATTERN.sub("", message.strip())
+    english_term = _extract_english_location_term(text)
+    if english_term:
+        return (english_term,)
     text = re.sub(r"(?:会不会|是否|可能会|会)", "", text)
     end_match = _LOCATION_END_PATTERN.search(text)
     candidate_text = text[: end_match.start()] if end_match else text
     candidate_text = candidate_text.strip(" \t\r\n？?！!。.")
     candidate_text = _LEADING_FILLER_PATTERN.sub("", candidate_text)
     candidate_text = _TRAILING_FILLER_PATTERN.sub("", candidate_text)
+    if _QUALIFIED_LOCATION_PATTERN.fullmatch(candidate_text):
+        return (re.sub(r"\s*,\s*", ", ", candidate_text),)
 
     terms = []
     for raw_term in _LOCATION_SEPARATOR_PATTERN.split(candidate_text):
@@ -120,3 +156,19 @@ def _extract_location_terms(message: str) -> Tuple[str, ...]:
     # 兼容措辞较复杂但仍包含白名单城市的旧查询。
     known_matches = [match.group(0) for match in _CITY_PATTERN.finditer(message)]
     return tuple(dict.fromkeys(known_matches[:5]))
+
+
+def _extract_english_location_term(message: str) -> Optional[str]:
+    """提取常见英文天气问法中的全球城市或“城市, 国家”地点。"""
+
+    normalized = re.sub(r"\s+", " ", message).strip()
+    for pattern in _ENGLISH_LOCATION_PATTERNS:
+        match = pattern.fullmatch(normalized)
+        if not match:
+            continue
+        location = match.group(1).strip(" \t\r\n?!. ")
+        if _VALID_LOCATION_PATTERN.fullmatch(location):
+            return location
+        if _QUALIFIED_LOCATION_PATTERN.fullmatch(location):
+            return re.sub(r"\s*,\s*", ", ", location)
+    return None

@@ -57,6 +57,32 @@ def test_resolves_any_city_with_nominatim_and_validates_coordinates():
     assert calls[0]["allow_redirects"] is False
 
 
+def test_accepts_city_equivalent_global_administrative_settlement():
+    resolver = NominatimCityResolver(
+        request_get=lambda **_kwargs: FakeResponse(
+            [
+                {
+                    "name": "東京都 / 東京",
+                    "lat": "35.67686",
+                    "lon": "139.76389",
+                    "type": "administrative",
+                    "addresstype": "province",
+                    "importance": 0.82,
+                    "address": {"province": "東京都", "country_code": "jp"},
+                }
+            ]
+        ),
+        min_interval_seconds=0,
+    )
+
+    resolution = resolver.resolve("Tokyo, Japan")
+
+    assert resolution.city.name == "Tokyo, Japan"
+    assert resolution.city.country_code == "JP"
+    assert resolution.city.latitude == pytest.approx(35.67686)
+    assert resolution.city.longitude == pytest.approx(139.76389)
+
+
 def test_corrects_confirmed_alias_before_geocoding():
     queries = []
 

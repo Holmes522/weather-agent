@@ -105,3 +105,4 @@ weather-agent/
 4. 请求可选择 OpenWeatherMap 或和风天气，并在响应中返回实际使用的 Provider。
 5. 缺少城市、Provider 无效、API Key 缺失、上游失败都有稳定的 JSON 错误响应。
 6. `pytest` 全部通过，且项目不依赖真实网络测试。
+7. 中文或英文全球城市查询可以通过 Nominatim 解析；“城市, 国家/地区”保持为一个地点，能力询问不会触发地理编码。

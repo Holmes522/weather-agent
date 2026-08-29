@@ -41,6 +41,30 @@ def test_unknown_city_is_not_accepted():
     assert result.date_label == "明天"
 
 
+def test_extracts_world_city_from_english_weather_question():
+    result = parse_query("What's the weather in Paris tomorrow?")
+
+    assert result.city is None
+    assert result.location_terms == ("Paris",)
+    assert result.day_offset == 1
+    assert result.date_label == "明天"
+
+
+def test_keeps_city_and_country_as_one_location_term():
+    result = parse_query("Paris, France明天天气怎么样？")
+
+    assert result.location_terms == ("Paris, France",)
+    assert result.day_offset == 1
+
+
+def test_english_time_word_is_not_removed_from_inside_a_location_name():
+    result = parse_query("Tomorrowland weather")
+
+    assert result.location_terms == ("Tomorrowland",)
+    assert result.day_offset == 0
+    assert result.date_is_explicit is False
+
+
 def test_follow_up_without_city_has_no_location_terms():
     result = parse_query("那后天呢？")
 

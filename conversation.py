@@ -31,22 +31,29 @@ def classify_intent(message: str, has_full_weather_offer: bool = False) -> str:
     """按更具体的意图优先分类，避免“天气”覆盖单项问题。"""
 
     normalized = re.sub(r"\s+", "", message)
+    english = re.sub(r"\s+", " ", message).strip().lower()
     if has_full_weather_offer and is_full_weather_confirmation(normalized):
         return FULL
     if re.search(
         r"出门|带什么|带伞|雨伞|穿什么|穿衣|怎么穿|跑步|户外|运动",
         normalized,
-    ):
+    ) or re.search(r"\b(?:go out|going out|umbrella|what to wear|outdoor|exercise)\b", english):
         return OUTING
-    if re.search(r"湿度|潮湿|干燥", normalized):
+    if re.search(r"湿度|潮湿|干燥", normalized) or "humidity" in english:
         return HUMIDITY
-    if re.search(r"风速|风大|刮风|几级风", normalized):
+    if re.search(r"风速|风大|刮风|几级风", normalized) or re.search(
+        r"\b(?:wind|windy)\b", english
+    ):
         return WIND
-    if re.search(r"气温|温度|多少度|冷不冷|热不热", normalized):
+    if re.search(r"气温|温度|多少度|冷不冷|热不热", normalized) or re.search(
+        r"\b(?:temperature|degrees|hot|cold)\b", english
+    ):
         return TEMPERATURE
-    if re.search(r"下雨|降雨|有雨|淋雨", normalized):
+    if re.search(r"下雨|降雨|有雨|淋雨", normalized) or re.search(
+        r"\b(?:rain|raining|rainy)\b", english
+    ):
         return RAIN
-    if "天气" in normalized:
+    if "天气" in normalized or re.search(r"\b(?:weather|forecast)\b", english):
         return FULL
     if _PURE_FOLLOW_UP.fullmatch(normalized):
         return FOLLOW_UP

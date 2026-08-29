@@ -87,6 +87,12 @@ from weather_client import (
 MAX_MESSAGE_LENGTH = 200
 MAX_HISTORY_MESSAGES = 12
 LOCAL_ADDRESSES = {"127.0.0.1", "::1"}
+AGENT_CAPABILITY_ANSWER = (
+    "我主要能查询全球城市今天、明天和后天的真实天气，支持中文、英文和一次最多五个城市，"
+    "并按需回答温度、湿度、风速、降雨或出行建议。天气结果和多城市行程还可以导出为 "
+    "Word、Excel、PDF 或 Markdown；配置 AI 模型后，也能进行基础聊天、解释、写作和总结。"
+    "如果城市存在重名，建议写成“城市, 国家/地区”，例如“Paris, France明天天气怎么样？”"
+)
 PROVIDER_CATALOG = (
     {
         "id": "openmeteo",
@@ -589,6 +595,34 @@ def create_app(
             active_llm = llm_registry.client_for(llm_id)
         except LLMRegistryError:
             return _error_response("INVALID_LLM", "没有找到该 AI 模型配置。", 422)
+        if _is_agent_capability_question(message):
+            previous_messages = previous_context.messages if previous_context else ()
+            messages = (
+                *previous_messages,
+                ConversationMessage("user", message),
+                ConversationMessage("assistant", AGENT_CAPABILITY_ANSWER),
+            )[-MAX_HISTORY_MESSAGES:]
+            context = (
+                replace(previous_context, messages=messages)
+                if previous_context
+                else ConversationContext(cities=(), intent=BRIEF, messages=messages)
+            )
+            response_payload = {
+                "session_id": session_id,
+                "provider": provider,
+                "mode": "agent" if active_llm is not None else "weather",
+                "tool_used": False,
+                "intent": "capabilities",
+                "display_mode": "text",
+                "answer": AGENT_CAPABILITY_ANSWER,
+            }
+            if active_llm is not None:
+                response_payload["model"] = active_llm.display_name
+            store.set_context(session_id, context)
+            record_visible_exchange_for_request(
+                store, session_id, message, response_payload
+            )
+            return jsonify(response_payload)
         if active_llm is not None:
             agent_tool_contexts = []
 
@@ -970,8 +1004,48 @@ def _date_label(day_offset: int) -> str:
 def _looks_like_weather_request(message: str) -> bool:
     return bool(
         re.search(
-            r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热|今天|明天|后天",
+            r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热|今天|明天|后天|"
+            r"\b(?:weather|forecast|temperature|humidity|wind|windy|rain|raining|rainy|umbrella|outdoor|today|tomorrow)\b",
             message,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _is_global_city_capability_question(message: str) -> bool:
+    """识别全球查询能力询问，避免把“国外”误送去地理编码。"""
+
+    normalized = re.sub(r"\s+", "", message)
+    if re.search(r"今天|明天|后天|\b(?:today|tomorrow)\b", normalized, re.I):
+        return False
+    scope = r"(?:国外|海外|全球|全世界|世界各地)"
+    trailing = r"(?:的)?(?:城市)?(?:的?天气)?(?:吗|呢|么)?[？?。！!]*"
+    capability_first = re.fullmatch(
+        rf"(?:你)?(?:可不可以|不可以|可以|能不能|不能|能否|能|是否支持|支持)"
+        rf"(?:查询|查|查看|查到)?{scope}{trailing}",
+        normalized,
+    )
+    scope_first = re.fullmatch(
+        rf"{scope}(?:城市)?(?:的?天气)?(?:也)?"
+        rf"(?:可不可以|可以|能不能|不能|能否|是否支持|支持|能查|能查询|能查看|能查到)"
+        r"(?:查询|查|查看|查到)?(?:吗|呢|么)?[？?。！!]*",
+        normalized,
+    )
+    return bool(capability_first or scope_first)
+
+
+def _is_agent_capability_question(message: str) -> bool:
+    """能力说明使用应用事实，避免模型臆测功能或地域范围。"""
+
+    if _is_global_city_capability_question(message):
+        return True
+    normalized = re.sub(r"\s+", "", message)
+    return bool(
+        re.fullmatch(
+            r"(?:你好[,，]?)?(?:(?:你)?(?:可以|能|会)做(?:些)?什么|"
+            r"(?:你)?(?:有)?哪些(?:能力|功能)|"
+            r"介绍(?:一下)?(?:你)?的?(?:能力|功能))[？?。！!]*",
+            normalized,
         )
     )
 
@@ -984,18 +1058,23 @@ def _requires_weather_grounding(
     if re.search(r"什么是|是什么意思|解释(?:一下)?|定义|概念|原理", message):
         return False
     if not re.search(
-        r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热",
+        r"天气|气温|温度|湿度|风速|风大|刮风|下雨|降雨|带伞|出门|穿衣|跑步|户外|运动|冷不冷|热不热|"
+        r"\b(?:weather|forecast|temperature|humidity|wind|windy|rain|raining|rainy|umbrella|outdoor)\b",
         message,
+        re.IGNORECASE,
     ):
         return False
     parsed = parse_query(message)
     has_city_context = bool(previous_context and previous_context.cities)
-    has_relative_date = any(label in message for label in ("今天", "明天", "后天"))
+    has_relative_date = bool(
+        re.search(r"今天|明天|后天|\b(?:today|tomorrow)\b", message, re.IGNORECASE)
+    )
     return bool(
         parsed.location_terms
         or has_city_context
         or has_relative_date
         or "天气" in message
+        or bool(re.search(r"\b(?:weather|forecast)\b", message, re.IGNORECASE))
     )
 
 

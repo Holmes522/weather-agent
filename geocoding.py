@@ -40,14 +40,19 @@ class NominatimCityResolver:
     CONFIRMED_ALIASES = {
         "大利": "大理",
     }
+    # Nominatim 的 settlement 结果可能以行政区表示城市实体（例如 Tokyo 为
+    # province）；仍优先选择 city/town，仅在没有更具体城市候选时使用。
+    # Source: https://nominatim.org/release-docs/latest/api/Search/#result-restriction
     _TYPE_PRIORITY = {
         "city": 0,
         "municipality": 1,
         "town": 2,
         "region": 3,
-        "county": 4,
-        "village": 5,
-        "hamlet": 6,
+        "province": 4,
+        "state": 5,
+        "county": 6,
+        "village": 7,
+        "hamlet": 8,
     }
 
     def __init__(
