@@ -121,3 +121,11 @@ parser + session_store + weather_client → /chat
 3. 使用 `create_agent`、只读天气 Tool 和调用限制 Middleware 替换默认手写循环，同时保留 native 回滚路径。
 4. 保持 `/chat`、天气卡、会话与导出契约兼容，在响应中暴露实际 Agent 引擎。
 5. 完成焦点测试、完整回归、依赖审查、安全审查、README 与远端 CI。
+
+## Weather Knowledge RAG Upgrade
+
+1. 建立固定来源、只读、有限大小的天气安全 Markdown 知识库。
+2. 使用 LangChain Embeddings 接口和 InMemoryVectorStore 实现无需外部 Key 的本地检索。
+3. 把知识检索注册为 Agentic RAG 工具，与实时天气工具保持独立事实边界。
+4. 在 `/chat`、当前聊天和历史对话中展示实际使用的权威来源。
+5. 完成检索评测、Agent/API/UI 回归、安全审查、浏览器验证和远端 CI。
