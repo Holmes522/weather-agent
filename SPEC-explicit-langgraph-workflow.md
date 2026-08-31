@@ -55,7 +55,7 @@ finalize <--------------------+
 - `tools`：使用 `ToolNode` 执行天气和知识检索；同一模型回合内的独立工具调用可由 LangGraph 并行调度。
 - `finalize`：只接受不含工具调用、非空且不超过 4000 字符的最终 AI 文本。
 - 条件边：模型有工具调用时进入 `tools`，否则进入 `finalize`；工具执行后固定返回 `model`。
-- 运行状态：`messages` 使用 LangGraph 消息 reducer，`answer` 由 `finalize` 写入。
+- 运行状态：`messages` 使用 LangGraph 消息 reducer，`answer` 由 `finalize` 写入；模型、总工具、天气工具和知识检索的调用计数也随每次图运行的 State 流转，保证预算可审计且不同调用互不污染。
 
 ## Runtime Contract
 

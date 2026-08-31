@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 from agent import AgentLimitError, AgentProtocolError, KnowledgeSource, WeatherToolInput
 from knowledge_base import KnowledgeChunk
@@ -65,6 +66,28 @@ def test_explicit_langgraph_exposes_named_orchestration_nodes():
     graph_nodes = set(workflow.graph.get_graph().nodes)
 
     assert {"model", "tools", "finalize"}.issubset(graph_nodes)
+
+
+def test_compiled_langgraph_budget_is_scoped_to_each_invocation():
+    workflow = build_langgraph_agent(
+        client=FakeLLMClient([AssistantTurn("第一次"), AssistantTurn("第二次")]),
+        weather_tool=lambda value: {"results": []},
+    )
+    initial_state = {
+        "messages": [HumanMessage(content="你好")],
+        "answer": "",
+        "model_calls": 0,
+        "tool_calls": 0,
+        "weather_tool_calls": 0,
+        "knowledge_tool_calls": 0,
+    }
+
+    first = workflow.graph.invoke(initial_state)
+    second = workflow.graph.invoke(initial_state)
+
+    assert first["answer"] == "第一次"
+    assert second["answer"] == "第二次"
+    assert first["model_calls"] == second["model_calls"] == 1
 
 
 def test_langgraph_general_chat_reaches_finalize_without_tools():

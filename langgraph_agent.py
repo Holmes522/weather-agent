@@ -37,6 +37,10 @@ class WeatherAgentGraphState(MessagesState):
     """显式图状态；消息由 LangGraph reducer 追加，答案只由 finalize 写入。"""
 
     answer: str
+    model_calls: int
+    tool_calls: int
+    weather_tool_calls: int
+    knowledge_tool_calls: int
 
 
 @dataclass(frozen=True)
@@ -60,21 +64,21 @@ def build_langgraph_agent(
     bound_model = ExistingChatModelAdapter(client=client).bind_tools(
         tool_runtime.tools
     )
-    model_calls = 0
-    tool_calls: Counter[str] = Counter()
 
-    def model_node(state: WeatherAgentGraphState) -> Dict[str, List[AIMessage]]:
-        nonlocal model_calls
+    def model_node(state: WeatherAgentGraphState) -> Dict[str, object]:
+        model_calls = state.get("model_calls", 0)
         if model_calls >= MAX_MODEL_CALLS:
             raise AgentLimitError("agent model call limit exceeded")
-        model_calls += 1
         response = bound_model.invoke(
             [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
         )
         if not isinstance(response, AIMessage):
             raise AgentProtocolError("agent model result is invalid")
-        _reserve_tool_budget(response, tool_calls)
-        return {"messages": [response]}
+        return {
+            "messages": [response],
+            "model_calls": model_calls + 1,
+            **_next_tool_budget(response, state),
+        }
 
     def route_after_model(
         state: WeatherAgentGraphState,
@@ -125,7 +129,14 @@ def run_langgraph_agent(
     messages.append(HumanMessage(content=user_message))
     try:
         output = workflow.graph.invoke(
-            {"messages": messages, "answer": ""},
+            {
+                "messages": messages,
+                "answer": "",
+                "model_calls": 0,
+                "tool_calls": 0,
+                "weather_tool_calls": 0,
+                "knowledge_tool_calls": 0,
+            },
             config={"recursion_limit": GRAPH_RECURSION_LIMIT},
         )
     except GraphRecursionError as error:
@@ -143,21 +154,30 @@ def run_langgraph_agent(
     )
 
 
-def _reserve_tool_budget(
+def _next_tool_budget(
     message: AIMessage,
-    accumulated_calls: Counter[str],
-) -> None:
+    state: WeatherAgentGraphState,
+) -> Dict[str, int]:
     proposed = Counter(call.get("name") for call in message.tool_calls)
     if None in proposed:
         raise AgentProtocolError("agent tool call is invalid")
-    next_calls = accumulated_calls + proposed
+    next_total = state.get("tool_calls", 0) + sum(proposed.values())
+    next_weather = state.get("weather_tool_calls", 0) + proposed["get_weather"]
+    next_knowledge = (
+        state.get("knowledge_tool_calls", 0)
+        + proposed["search_weather_knowledge"]
+    )
     if (
-        sum(next_calls.values()) > MAX_TOTAL_TOOL_CALLS
-        or next_calls["get_weather"] > MAX_WEATHER_TOOL_CALLS
-        or next_calls["search_weather_knowledge"] > MAX_KNOWLEDGE_TOOL_CALLS
+        next_total > MAX_TOTAL_TOOL_CALLS
+        or next_weather > MAX_WEATHER_TOOL_CALLS
+        or next_knowledge > MAX_KNOWLEDGE_TOOL_CALLS
     ):
         raise AgentLimitError("agent tool call limit exceeded")
-    accumulated_calls.update(proposed)
+    return {
+        "tool_calls": next_total,
+        "weather_tool_calls": next_weather,
+        "knowledge_tool_calls": next_knowledge,
+    }
 
 
 def _last_ai_message(messages: object) -> AIMessage:
