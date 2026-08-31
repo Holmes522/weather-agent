@@ -12,7 +12,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from agent import AgentError, ChatModel, WeatherToolInput, run_agent
-from langchain_agent import run_langchain_agent
+from langgraph_agent import run_langgraph_agent
 from knowledge_base import build_default_knowledge_base
 from config import ConfigurationError, Settings
 from conversation_history import (
@@ -163,12 +163,14 @@ def create_app(
         raise ConfigurationError(
             f"Default weather provider is not configured: {effective_default_provider}"
         )
-    if effective_settings.agent_engine not in {"langchain", "native"}:
-        raise ConfigurationError("Agent engine is invalid")
     if effective_settings.agent_engine == "langchain":
+        effective_settings = replace(effective_settings, agent_engine="langgraph")
+    if effective_settings.agent_engine not in {"langgraph", "native"}:
+        raise ConfigurationError("Agent engine is invalid")
+    if effective_settings.agent_engine == "langgraph":
         knowledge_base = build_default_knowledge_base()
         agent_runner = partial(
-            run_langchain_agent,
+            run_langgraph_agent,
             knowledge_search=knowledge_base.search,
         )
     else:

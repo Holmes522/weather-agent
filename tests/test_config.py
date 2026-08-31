@@ -71,11 +71,18 @@ def test_production_settings_are_loaded_from_environment(monkeypatch):
     assert settings.chat_rate_limit_per_minute == 45
 
 
-def test_langchain_is_the_default_agent_engine(monkeypatch):
+def test_langgraph_is_the_default_agent_engine(monkeypatch):
     monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
     monkeypatch.delenv("AGENT_ENGINE", raising=False)
 
-    assert Settings.from_env().agent_engine == "langchain"
+    assert Settings.from_env().agent_engine == "langgraph"
+
+
+def test_legacy_langchain_agent_engine_is_normalized(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("AGENT_ENGINE", "langchain")
+
+    assert Settings.from_env().agent_engine == "langgraph"
 
 
 def test_native_agent_engine_can_be_selected(monkeypatch):

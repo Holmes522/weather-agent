@@ -16,7 +16,7 @@ services:
       - key: CHAT_RATE_LIMIT_PER_MINUTE
         value: 30
       - key: AGENT_ENGINE
-        value: langchain
+        value: langgraph
       - key: GEOCODING_API_URL
         value: https://nominatim.openstreetmap.org/search
       - key: GEOCODING_USER_AGENT

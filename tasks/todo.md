@@ -42,5 +42,5 @@
 - [x] Task 40: 文档、完整回归、安全/质量审查、浏览器验证与远端 CI；验证：`pytest -q`
 - [x] Task 41: 显式 LangGraph 状态、节点和路由契约；验证：`pytest tests/test_langgraph_agent.py -q`
 - [x] Task 42: 天气/RAG ToolNode 与有界执行；验证：`pytest tests/test_langgraph_agent.py tests/test_langchain_agent.py -q`
-- [ ] Task 43: 默认引擎、兼容别名与 `/chat` 契约；验证：`pytest tests/test_config.py tests/test_ai_chat.py -q`
+- [x] Task 43: 默认引擎、兼容别名与 `/chat` 契约；验证：`pytest tests/test_config.py tests/test_ai_chat.py -q`
 - [ ] Task 44: 文档、完整回归、安全/质量审查与远端 CI；验证：`pytest -q`
