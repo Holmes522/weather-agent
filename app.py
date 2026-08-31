@@ -11,6 +11,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from agent import AgentError, ChatModel, WeatherToolInput, run_agent
+from langchain_agent import run_langchain_agent
 from config import ConfigurationError, Settings
 from conversation_history import (
     ensure_conversation_for_request,
@@ -159,6 +160,13 @@ def create_app(
         raise ConfigurationError(
             f"Default weather provider is not configured: {effective_default_provider}"
         )
+    if effective_settings.agent_engine not in {"langchain", "native"}:
+        raise ConfigurationError("Agent engine is invalid")
+    agent_runner = (
+        run_langchain_agent
+        if effective_settings.agent_engine == "langchain"
+        else run_agent
+    )
     store = session_store or InMemorySessionStore()
     resolver = city_resolver or NominatimCityResolver(
         base_url=effective_settings.geocoding_api_url,
@@ -618,6 +626,7 @@ def create_app(
             }
             if active_llm is not None:
                 response_payload["model"] = active_llm.display_name
+                response_payload["agent_engine"] = effective_settings.agent_engine
             store.set_context(session_id, context)
             record_visible_exchange_for_request(
                 store, session_id, message, response_payload
@@ -640,7 +649,7 @@ def create_app(
                 for item in (previous_context.messages if previous_context else ())
             ]
             try:
-                agent_result = run_agent(
+                agent_result = agent_runner(
                     client=active_llm,
                     history=history,
                     user_message=message,
@@ -717,6 +726,7 @@ def create_app(
                     session_id=session_id,
                     provider=provider,
                     model_name=active_llm.display_name,
+                    agent_engine=effective_settings.agent_engine,
                     answer=agent_result.answer,
                     tool_results=agent_result.tool_results,
                     tool_inputs=agent_result.tool_inputs,
@@ -733,6 +743,10 @@ def create_app(
                             pending_export_format,
                             export_store,
                         )
+                        response_payload["agent_engine"] = (
+                            effective_settings.agent_engine
+                        )
+                        response_payload["model"] = active_llm.display_name
                 store.set_context(session_id, context)
                 record_visible_exchange_for_request(
                     store,
@@ -941,6 +955,7 @@ def _agent_response_payload(
     session_id: str,
     provider: str,
     model_name: str,
+    agent_engine: str,
     answer: str,
     tool_results,
     tool_inputs,
@@ -950,6 +965,7 @@ def _agent_response_payload(
         "provider": provider,
         "mode": "agent",
         "model": model_name,
+        "agent_engine": agent_engine,
         "tool_used": bool(tool_results),
         "display_mode": "text",
         "answer": answer,

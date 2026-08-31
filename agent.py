@@ -131,7 +131,7 @@ def run_agent(
 
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        *_normalized_history(history),
+        *normalize_history(history),
         {"role": "user", "content": user_message},
     ]
     tool_results: List[Dict[str, Any]] = []
@@ -218,9 +218,11 @@ def validate_weather_tool_arguments(arguments_json: object) -> WeatherToolInput:
     return WeatherToolInput(tuple(cities), int(day_offset), str(detail))
 
 
-def _normalized_history(
+def normalize_history(
     history: Sequence[Dict[str, str]],
 ) -> List[Dict[str, str]]:
+    """清洗并限制送入任一 Agent 引擎的最近对话历史。"""
+
     normalized: List[Dict[str, str]] = []
     for message in list(history)[-MAX_HISTORY_MESSAGES:]:
         if not isinstance(message, dict):

@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.13"]
+        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -28,4 +28,4 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
       - name: Compile Python sources
-        run: python -m compileall -q app.py config.py parser.py rate_limiter.py session_store.py weather_client.py wsgi.py
+        run: python -m compileall -q app.py agent.py langchain_agent.py config.py parser.py rate_limiter.py session_store.py weather_client.py wsgi.py

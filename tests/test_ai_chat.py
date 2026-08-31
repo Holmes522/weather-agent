@@ -96,6 +96,7 @@ def test_capability_question_returns_truthful_scope_without_model_guessing():
     assert "全球城市" in body["answer"]
     assert "Word、Excel、PDF 或 Markdown" in body["answer"]
     assert body["mode"] == "agent"
+    assert body["agent_engine"] == "langchain"
     assert body["model"] == "测试模型"
     assert body["tool_used"] is False
     assert body["display_mode"] == "text"
@@ -255,6 +256,7 @@ def test_agent_calls_real_weather_provider_and_returns_compatible_payload():
     assert response.status_code == 200
     body = response.get_json()
     assert body["mode"] == "agent"
+    assert body["agent_engine"] == "langchain"
     assert body["tool_used"] is True
     assert body["city"] == "深圳"
     assert body["date"] == "明天"
@@ -262,6 +264,23 @@ def test_agent_calls_real_weather_provider_and_returns_compatible_payload():
     assert body["display_mode"] == "text"
     assert "室内" in body["answer"]
     assert weather.calls == [("forecast", "深圳", 1)]
+
+
+def test_native_agent_engine_remains_an_explicit_rollback_path():
+    model = FakeLLMClient([AssistantTurn("由原生引擎回答。")])
+    app = create_app(
+        settings=Settings(api_key="test-key", agent_engine="native"),
+        weather_client=FakeWeatherClient(),
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat", json={"message": "你好", "session_id": "native-engine"}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["answer"] == "由原生引擎回答。"
+    assert response.get_json()["agent_engine"] == "native"
 
 
 def test_agent_full_weather_request_keeps_weather_card_presentation():

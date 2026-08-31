@@ -71,6 +71,28 @@ def test_production_settings_are_loaded_from_environment(monkeypatch):
     assert settings.chat_rate_limit_per_minute == 45
 
 
+def test_langchain_is_the_default_agent_engine(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.delenv("AGENT_ENGINE", raising=False)
+
+    assert Settings.from_env().agent_engine == "langchain"
+
+
+def test_native_agent_engine_can_be_selected(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("AGENT_ENGINE", "native")
+
+    assert Settings.from_env().agent_engine == "native"
+
+
+def test_unknown_agent_engine_is_rejected(monkeypatch):
+    monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
+    monkeypatch.setenv("AGENT_ENGINE", "automatic")
+
+    with pytest.raises(ConfigurationError):
+        Settings.from_env()
+
+
 def test_geocoding_service_can_be_replaced_with_environment(monkeypatch):
     monkeypatch.setenv("WEATHER_PROVIDER", "openmeteo")
     monkeypatch.setenv("GEOCODING_API_URL", "https://geo.example.com/search")

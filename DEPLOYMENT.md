@@ -13,6 +13,7 @@ Blueprint 会自动设置：
 
 - 免费 Web Service；
 - `WEATHER_PROVIDER=openmeteo`，无需 API Key；
+- `AGENT_ENGINE=langchain`，启用 LangChain/LangGraph 编排；
 - `APP_ENV=production`，关闭公网配置页；
 - 每个客户端每分钟最多 30 次聊天请求；
 - Gunicorn 单 Worker、四线程；
@@ -69,6 +70,8 @@ LLM_DISPLAY_NAME=DeepSeek
 ```
 
 也可以换成 OpenAI、OpenRouter 或其他支持 Chat Completions 与 tool calling 的 HTTPS 兼容接口。生产服务器不能连接你个人电脑上的 `127.0.0.1` Ollama；若要在公网使用本地模型，需要单独部署模型服务并做好认证与网络隔离。
+
+若 LangChain 升级后出现兼容问题，可临时把 `AGENT_ENGINE` 改为 `native` 并重新部署。该开关只改变 Agent 编排实现，不改变天气 Provider、模型配置或 `/chat` 契约；系统不会静默回退。
 
 ## 5. 回滚
 

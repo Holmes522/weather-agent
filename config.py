@@ -29,6 +29,7 @@ class Settings:
     llm_base_url: Optional[str] = None
     llm_model: Optional[str] = None
     llm_display_name: str = "AI 模型"
+    agent_engine: str = "langchain"
 
     @property
     def is_production(self) -> bool:
@@ -63,6 +64,9 @@ class Settings:
             raise ConfigurationError(
                 "LLM_BASE_URL and LLM_MODEL must both be configured"
             )
+        agent_engine = os.getenv("AGENT_ENGINE", "langchain").strip().lower()
+        if agent_engine not in {"langchain", "native"}:
+            raise ConfigurationError("AGENT_ENGINE must be langchain or native")
         environment = os.getenv("APP_ENV", "development").strip().lower()
         if environment not in {"development", "production"}:
             raise ConfigurationError("APP_ENV must be development or production")
@@ -131,4 +135,5 @@ class Settings:
             llm_base_url=llm_base_url,
             llm_model=llm_model,
             llm_display_name=llm_display_name,
+            agent_engine=agent_engine,
         )

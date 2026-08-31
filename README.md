@@ -20,7 +20,8 @@
 - 可选连接 OpenAI、DeepSeek、OpenRouter、智谱 GLM、Kimi、通义千问、豆包、Gemini、本机 Ollama 或自定义 OpenAI 兼容接口。
 - 本机配置页可同时保存最多 20 个 AI 模型配置并自由切换；新增模型不会覆盖旧模型。
 - AI 模型只拥有 `get_weather` 工具；不能执行命令、浏览网页、读写文件或控制电脑。
-- 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多调用两次天气工具。
+- 默认使用 LangChain `create_agent`（由 LangGraph 运行）编排模型与工具；可通过环境变量明确回滚到原生引擎。
+- 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多调用两次天气工具、三次模型。
 
 ## 项目结构
 
@@ -28,6 +29,7 @@
 .
 ├── app.py
 ├── agent.py
+├── langchain_agent.py
 ├── llm_client.py
 ├── llm_registry.py
 ├── weather_export.py
@@ -80,7 +82,7 @@
 
 ## 安装与运行
 
-需要 Python 3.9 或更高版本。使用和风天气时，需要在和风天气控制台创建 API Key，并复制控制台分配的专属 API Host。
+需要 Python 3.10 或更高版本。使用和风天气时，需要在和风天气控制台创建 API Key，并复制控制台分配的专属 API Host。
 
 ### 最快体验（天气模式，无需任何 API Key）
 
@@ -149,6 +151,20 @@ python app.py
 
 外部自定义模型地址必须使用 HTTPS；只有 `localhost`、`127.0.0.1` 或 `::1` 可以使用 HTTP。选择的模型必须支持 OpenAI 风格的 Chat Completions 和 function/tool calling。
 
+默认 Agent 引擎为 LangChain，无需额外配置。遇到框架兼容问题时，可以在启动 Flask 前显式切回原有受限循环；系统不会在运行中静默切换：
+
+```powershell
+$env:AGENT_ENGINE = "native"
+python app.py
+```
+
+恢复默认引擎：
+
+```powershell
+$env:AGENT_ENGINE = "langchain"
+python app.py
+```
+
 Claude 官方直连接口不是 OpenAI Chat Completions 协议，因此本版本不伪装成直连预设；如需使用 Claude，可在 OpenRouter 中填写对应 Claude 模型 ID，或使用受信任的 OpenAI 兼容网关。
 
 ## 使用可视化平台
@@ -178,7 +194,7 @@ Claude 官方直连接口不是 OpenAI Chat Completions 协议，因此本版本
 
 生产环境会自动关闭 `/settings` 和 `/api/providers`，并对 `/chat` 启用每个客户端每分钟 30 次的内存限流。详细操作、验证和回滚步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
-如需在 Render 开启 AI，把 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_DISPLAY_NAME` 和对应的 `LLM_API_KEY` 作为 Secret 环境变量配置。生产环境同时关闭 `/api/llm`；不要把真实 Key 写进 `render.yaml` 或提交到 Git。
+如需在 Render 开启 AI，把 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_DISPLAY_NAME` 和对应的 `LLM_API_KEY` 作为 Secret 环境变量配置。Blueprint 已设置 `AGENT_ENGINE=langchain`；紧急回滚时在 Render 环境变量中改为 `native` 并重新部署。生产环境同时关闭 `/api/llm`；不要把真实 Key 写进 `render.yaml` 或提交到 Git。
 
 ## 测试
 
@@ -254,6 +270,7 @@ python app.py
   "cities": ["深圳", "广州"],
   "date": "明天",
   "provider": "openmeteo",
+  "agent_engine": "langchain",
   "intent": "full",
   "display_mode": "weather_cards",
   "answer": "深圳明天：……\n广州明天：……",
@@ -282,7 +299,7 @@ python app.py
 - 运行时新增的天气服务和 AI 模型配置只保存在当前进程；浏览器只保存选择 ID，重启 Flask 后需要重新添加。环境变量模型会在启动时自动恢复。
 - 行程导出一次最多 5 个目的地、未来 7 天和 35 条天气记录，单文件最多 2 MiB；临时下载存储有数量上限并约 1 小时过期，不适合作为长期文件存储。个别天气服务或套餐的预报天数可能更短，超出时会返回天气服务不可用提示。
 - Agent 当前只有只读天气工具，不具备 Codex 或 Claude Code 的文件、终端、网页浏览和代码执行能力。
-- 工具只支持今天、明天和后天；每轮最多两次工具调用，模型回复最多 4000 字符。
+- 工具只支持今天、明天和后天；每轮最多两次工具调用、三次模型调用，模型回复最多 4000 字符。
 - 当 `APP_ENV=production` 时，配置页和配置接口直接返回 404；天气凭据必须通过托管平台的环境变量设置。
 - 免费部署使用单 Worker，以保证当前内存会话和限流状态一致；扩容前应迁移到 Redis。
 - 公共 Nominatim 服务限制整个应用每秒最多一次请求；项目会缓存结果并串行调用，适合中低流量演示。全球检索范围取决于 OpenStreetMap 的地点数据，同名或较小聚落建议补充国家/地区。高流量部署应通过 `GEOCODING_API_URL` 切换到自托管或商业兼容端点。
@@ -309,6 +326,9 @@ python app.py
 - Nominatim Search API：<https://nominatim.org/release-docs/latest/api/Search/>
 - Nominatim 公共服务使用策略：<https://operations.osmfoundation.org/policies/nominatim/>
 - OpenAI function calling：<https://developers.openai.com/api/docs/guides/function-calling>
+- LangChain Agents：<https://docs.langchain.com/oss/python/langchain/agents>
+- LangChain Tools：<https://docs.langchain.com/oss/python/langchain/tools>
+- LangChain Middleware：<https://docs.langchain.com/oss/python/langchain/middleware/overview>
 - 智谱 GLM Chat Completions：<https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5>
 - Moonshot Kimi API：<https://platform.kimi.com/docs/api/overview>
 - 阿里云百炼 OpenAI 兼容 API：<https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions>

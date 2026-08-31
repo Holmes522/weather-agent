@@ -32,7 +32,7 @@
 - [x] Task 30: 短对话时输入区固定在工作区底部；验证：CSS 契约与桌面/窄屏真实浏览器
 - [x] Task 31: 欢迎区隐藏后仍显式固定消息区和输入区网格行；验证：可见输入表单底边在空对话与短对话中保持一致
 - [x] Task 32: 全球城市能力问答、中英文地点解析与行政型城市兼容；验证：解析/API/地理编码测试及东京、巴黎、圣保罗真实查询
-- [ ] Task 33: LangChain 模型适配器与受限天气 Tool；验证：`pytest tests/test_langchain_agent.py -q`
-- [ ] Task 34: `/chat` 默认 LangChain 与 native 回滚引擎；验证：`pytest tests/test_ai_chat.py tests/test_config.py -q`
-- [ ] Task 35: Python 3.10+、依赖、CI 与使用文档；验证：依赖检查、编译和文档契约
+- [x] Task 33: LangChain 模型适配器与受限天气 Tool；验证：`pytest tests/test_langchain_agent.py -q`
+- [x] Task 34: `/chat` 默认 LangChain 与 native 回滚引擎；验证：`pytest tests/test_ai_chat.py tests/test_config.py -q`
+- [x] Task 35: Python 3.10+、依赖、CI 与使用文档；验证：依赖检查、编译和文档契约
 - [ ] Task 36: 完整回归、安全/质量审查与远端 CI；验证：`pytest -q`
