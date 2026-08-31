@@ -1,6 +1,7 @@
 """只读天气知识库：校验 Markdown、生成本地向量并执行有界检索。"""
 
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import math
 from pathlib import Path
@@ -169,6 +170,7 @@ class WeatherKnowledgeBase:
         return tuple(results)
 
 
+@lru_cache(maxsize=1)
 def build_default_knowledge_base() -> WeatherKnowledgeBase:
     """从应用随附的只读知识目录构建进程内索引。"""
 

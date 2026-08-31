@@ -78,6 +78,22 @@ def weather_tool_turn(city="深圳", day_offset=1, detail="advice"):
     )
 
 
+def weather_and_knowledge_tool_turn():
+    return AssistantTurn(
+        "",
+        (
+            weather_tool_turn().tool_calls[0],
+            ToolCall(
+                call_id="call-knowledge",
+                name="search_weather_knowledge",
+                arguments_json=json.dumps(
+                    {"query": "雷雨天气适合爬山吗"}, ensure_ascii=False
+                ),
+            ),
+        ),
+    )
+
+
 def test_capability_question_returns_truthful_scope_without_model_guessing():
     weather = FakeWeatherClient()
     model = FakeLLMClient([AssistantTurn("你好，我可以陪你聊天，也可以帮你查天气。")])
@@ -264,6 +280,87 @@ def test_agent_calls_real_weather_provider_and_returns_compatible_payload():
     assert body["display_mode"] == "text"
     assert "室内" in body["answer"]
     assert weather.calls == [("forecast", "深圳", 1)]
+
+
+def test_agent_can_return_weather_rag_sources_and_preserve_them_in_history():
+    model = FakeLLMClient(
+        [
+            weather_and_knowledge_tool_turn(),
+            AssistantTurn(
+                "深圳明天有雨，雷雨期间不建议爬山。依据：中国气象局。"
+            ),
+        ]
+    )
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=FakeWeatherClient(),
+        llm_client=model,
+    )
+    http = app.test_client()
+    session_id = http.post("/api/conversations").get_json()["conversation"]["id"]
+
+    response = http.post(
+        "/chat",
+        json={
+            "message": "深圳明天打雷还适合爬山吗？",
+            "session_id": session_id,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["tool_used"] is True
+    assert body["rag_used"] is True
+    assert body["knowledge_sources"]
+    assert "中国气象局" in body["knowledge_sources"][0]["source_name"]
+    assert body["knowledge_sources"][0]["source_url"].startswith(
+        "https://www.cma.gov.cn/"
+    )
+
+    messages = http.get(f"/api/conversations/{session_id}").get_json()[
+        "conversation"
+    ]["messages"]
+    saved_payload = messages[-1]["payload"]
+    assert saved_payload["rag_used"] is True
+    assert saved_payload["knowledge_sources"] == body["knowledge_sources"]
+
+
+def test_general_weather_safety_question_can_use_rag_without_live_weather():
+    model = FakeLLMClient(
+        [
+            AssistantTurn(
+                "",
+                (
+                    ToolCall(
+                        call_id="call-knowledge-only",
+                        name="search_weather_knowledge",
+                        arguments_json=json.dumps(
+                            {"query": "雷雨天气户外安全"}, ensure_ascii=False
+                        ),
+                    ),
+                ),
+            ),
+            AssistantTurn("雷雨时应停止登山、露营等户外活动。"),
+        ]
+    )
+    weather = FakeWeatherClient()
+    app = create_app(
+        settings=Settings(api_key="test-key"),
+        weather_client=weather,
+        llm_client=model,
+    )
+
+    response = app.test_client().post(
+        "/chat",
+        json={"message": "雷雨天气户外应该注意什么？", "session_id": "rag-only"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["rag_used"] is True
+    assert body["tool_used"] is True
+    assert body["display_mode"] == "text"
+    assert weather.calls == []
 
 
 def test_native_agent_engine_remains_an_explicit_rollback_path():

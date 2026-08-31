@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import replace
+from functools import partial
 from io import BytesIO
 from threading import RLock
 from typing import Dict, Optional
@@ -12,6 +13,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from agent import AgentError, ChatModel, WeatherToolInput, run_agent
 from langchain_agent import run_langchain_agent
+from knowledge_base import build_default_knowledge_base
 from config import ConfigurationError, Settings
 from conversation_history import (
     ensure_conversation_for_request,
@@ -162,11 +164,15 @@ def create_app(
         )
     if effective_settings.agent_engine not in {"langchain", "native"}:
         raise ConfigurationError("Agent engine is invalid")
-    agent_runner = (
-        run_langchain_agent
-        if effective_settings.agent_engine == "langchain"
-        else run_agent
-    )
+    if effective_settings.agent_engine == "langchain":
+        knowledge_base = build_default_knowledge_base()
+        agent_runner = partial(
+            run_langchain_agent,
+            knowledge_search=knowledge_base.search,
+        )
+    else:
+        # 保留原生引擎作为不启用 RAG 的显式回滚路径。
+        agent_runner = run_agent
     store = session_store or InMemorySessionStore()
     resolver = city_resolver or NominatimCityResolver(
         base_url=effective_settings.geocoding_api_url,
@@ -620,6 +626,8 @@ def create_app(
                 "provider": provider,
                 "mode": "agent" if active_llm is not None else "weather",
                 "tool_used": False,
+                "rag_used": False,
+                "knowledge_sources": [],
                 "intent": "capabilities",
                 "display_mode": "text",
                 "answer": AGENT_CAPABILITY_ANSWER,
@@ -674,7 +682,11 @@ def create_app(
                     "AI_UNAVAILABLE", "AI 服务暂时不可用，请稍后重试。", 502
                 )
 
-            if agent_result.tool_results or not grounding_required:
+            if (
+                agent_result.tool_results
+                or agent_result.knowledge_sources
+                or not grounding_required
+            ):
                 previous_messages = (
                     previous_context.messages if previous_context else ()
                 )
@@ -730,6 +742,7 @@ def create_app(
                     answer=agent_result.answer,
                     tool_results=agent_result.tool_results,
                     tool_inputs=agent_result.tool_inputs,
+                    knowledge_sources=agent_result.knowledge_sources,
                 )
                 if agent_result.tool_results:
                     snapshots = snapshots_from_results(
@@ -747,6 +760,14 @@ def create_app(
                             effective_settings.agent_engine
                         )
                         response_payload["model"] = active_llm.display_name
+                        response_payload["rag_used"] = bool(
+                            agent_result.knowledge_sources
+                        )
+                        response_payload["knowledge_sources"] = (
+                            _knowledge_sources_payload(
+                                agent_result.knowledge_sources
+                            )
+                        )
                 store.set_context(session_id, context)
                 record_visible_exchange_for_request(
                     store,
@@ -959,14 +980,18 @@ def _agent_response_payload(
     answer: str,
     tool_results,
     tool_inputs,
+    knowledge_sources,
 ):
+    serialized_sources = _knowledge_sources_payload(knowledge_sources)
     payload = {
         "session_id": session_id,
         "provider": provider,
         "mode": "agent",
         "model": model_name,
         "agent_engine": agent_engine,
-        "tool_used": bool(tool_results),
+        "tool_used": bool(tool_results or serialized_sources),
+        "rag_used": bool(serialized_sources),
+        "knowledge_sources": serialized_sources,
         "display_mode": "text",
         "answer": answer,
     }
@@ -999,6 +1024,18 @@ def _agent_response_payload(
         }
     )
     return payload
+
+
+def _knowledge_sources_payload(knowledge_sources):
+    return [
+        {
+            "title": source.title,
+            "section": source.section,
+            "source_name": source.source_name,
+            "source_url": source.source_url,
+        }
+        for source in knowledge_sources
+    ]
 
 
 def _intent_from_detail(detail: str) -> str:

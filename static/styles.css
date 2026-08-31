@@ -538,6 +538,42 @@ a:focus-visible {
   white-space: pre-line;
 }
 
+.agent-answer {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.knowledge-sources {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 78, 99, 0.14);
+  font-size: 0.8rem;
+}
+
+.knowledge-sources-label {
+  color: var(--muted);
+}
+
+.knowledge-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-source-link {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.knowledge-source-link:hover,
+.knowledge-source-link:focus-visible {
+  color: var(--accent);
+}
+
 .weather-card {
   width: min(100%, 660px);
   padding: clamp(18px, 3vw, 28px);

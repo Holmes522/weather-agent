@@ -139,20 +139,77 @@
     scrollToLatest();
   }
 
-  function appendAgentText(answer) {
+  function trustedKnowledgeSourceUrl(source) {
+    if (!source || typeof source.source_url !== "string") return null;
+    try {
+      const url = new URL(source.source_url);
+      const hostname = url.hostname.toLowerCase();
+      if (
+        url.protocol !== "https:" ||
+        url.username ||
+        url.password ||
+        url.hash ||
+        (hostname !== "gov.cn" && !hostname.endsWith(".gov.cn"))
+      ) {
+        return null;
+      }
+      return url;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function appendKnowledgeSources(container, sources) {
+    if (!Array.isArray(sources) || !sources.length) return;
+    const validSources = [];
+    const seen = new Set();
+    sources.forEach((source) => {
+      const url = trustedKnowledgeSourceUrl(source);
+      if (!url || seen.has(url.href)) return;
+      seen.add(url.href);
+      validSources.push({ source, url });
+    });
+    if (!validSources.length) return;
+
+    const sourcePanel = createElement("div", "knowledge-sources");
+    sourcePanel.appendChild(createElement("span", "knowledge-sources-label", "参考来源"));
+    const sourceList = createElement("ul", "knowledge-source-list");
+    validSources.forEach(({ source, url }) => {
+      const item = document.createElement("li");
+      const link = createElement(
+        "a",
+        "knowledge-source-link",
+        typeof source.source_name === "string" ? source.source_name : "官方资料"
+      );
+      link.href = url.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      const title = typeof source.title === "string" ? source.title : "";
+      if (title) link.title = title;
+      item.appendChild(link);
+      sourceList.appendChild(item);
+    });
+    sourcePanel.appendChild(sourceList);
+    container.appendChild(sourcePanel);
+  }
+
+  function appendAgentText(answer, knowledgeSources = []) {
     const item = createElement("li", "message message-agent");
-    item.appendChild(createElement("p", "message-bubble agent-text-bubble", answer));
+    const bubble = createElement("div", "message-bubble agent-text-bubble");
+    bubble.appendChild(createElement("p", "agent-answer", answer));
+    appendKnowledgeSources(bubble, knowledgeSources);
+    item.appendChild(bubble);
     chatLog.appendChild(item);
     scrollToLatest();
   }
 
   function appendAgentResponse(payload) {
     if (payload.display_mode === "text") {
-      appendAgentText(payload.answer);
+      appendAgentText(payload.answer, payload.knowledge_sources);
       appendExportDownload(payload.export);
       return;
     }
-    if (payload.mode === "agent") appendAgentText(payload.answer);
+    if (payload.mode === "agent") appendAgentText(payload.answer, payload.knowledge_sources);
     const results = Array.isArray(payload.results) && payload.results.length
       ? payload.results
       : [payload];

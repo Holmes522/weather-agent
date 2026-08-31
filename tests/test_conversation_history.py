@@ -127,6 +127,15 @@ def test_chat_script_remembers_the_active_conversation_across_settings_navigatio
     assert "storeSelection(ACTIVE_CONVERSATION_STORAGE_KEY, conversation.id)" in source
 
 
+def test_chat_script_renders_rag_sources_without_html_injection():
+    source = (Path(__file__).parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "knowledge_sources" in source
+    assert "new URL(source.source_url)" in source
+    assert 'link.rel = "noopener noreferrer"' in source
+    assert "innerHTML" not in source
+
+
 def test_chat_layout_keeps_the_composer_at_the_bottom_for_short_conversations():
     source = (Path(__file__).parents[1] / "static" / "styles.css").read_text(encoding="utf-8")
 
