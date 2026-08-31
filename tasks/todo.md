@@ -35,4 +35,4 @@
 - [x] Task 33: LangChain 模型适配器与受限天气 Tool；验证：`pytest tests/test_langchain_agent.py -q`
 - [x] Task 34: `/chat` 默认 LangChain 与 native 回滚引擎；验证：`pytest tests/test_ai_chat.py tests/test_config.py -q`
 - [x] Task 35: Python 3.10+、依赖、CI 与使用文档；验证：依赖检查、编译和文档契约
-- [ ] Task 36: 完整回归、安全/质量审查与远端 CI；验证：`pytest -q`
+- [x] Task 36: 完整回归、安全/质量审查与远端 CI；验证：`pytest -q`
