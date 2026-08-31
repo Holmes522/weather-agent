@@ -275,7 +275,7 @@ def run_langchain_agent(
     messages.append(HumanMessage(content=user_message))
 
     try:
-        # 中间件自身会增加图步骤；业务上限仍由 2 次工具/3 次模型调用控制。
+        # 中间件自身会增加图步骤；业务上限仍由 3 次工具/4 次模型调用控制。
         output = graph.invoke({"messages": messages}, config={"recursion_limit": 32})
     except (ToolCallLimitExceededError, ModelCallLimitExceededError) as error:
         raise AgentLimitError("agent execution limit exceeded") from error

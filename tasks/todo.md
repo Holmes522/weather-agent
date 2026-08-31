@@ -36,7 +36,7 @@
 - [x] Task 34: `/chat` 默认 LangChain 与 native 回滚引擎；验证：`pytest tests/test_ai_chat.py tests/test_config.py -q`
 - [x] Task 35: Python 3.10+、依赖、CI 与使用文档；验证：依赖检查、编译和文档契约
 - [x] Task 36: 完整回归、安全/质量审查与远端 CI；验证：`pytest -q`
-- [ ] Task 37: 本地天气知识库、文档校验与向量检索；验证：`pytest tests/test_knowledge_base.py -q`
-- [ ] Task 38: LangChain Agentic RAG 工具和调用限制；验证：`pytest tests/test_langchain_agent.py -q`
-- [ ] Task 39: `/chat`、历史记录和来源展示；验证：`pytest tests/test_ai_chat.py tests/test_conversation_history.py -q`
-- [ ] Task 40: 文档、完整回归、安全/质量审查、浏览器验证与远端 CI；验证：`pytest -q`
+- [x] Task 37: 本地天气知识库、文档校验与向量检索；验证：`pytest tests/test_knowledge_base.py -q`
+- [x] Task 38: LangChain Agentic RAG 工具和调用限制；验证：`pytest tests/test_langchain_agent.py -q`
+- [x] Task 39: `/chat`、历史记录和来源展示；验证：`pytest tests/test_ai_chat.py tests/test_conversation_history.py -q`
+- [x] Task 40: 文档、完整回归、安全/质量审查、浏览器验证与远端 CI；验证：`pytest -q`

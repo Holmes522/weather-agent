@@ -71,6 +71,8 @@ LLM_DISPLAY_NAME=DeepSeek
 
 也可以换成 OpenAI、OpenRouter 或其他支持 Chat Completions 与 tool calling 的 HTTPS 兼容接口。生产服务器不能连接你个人电脑上的 `127.0.0.1` Ollama；若要在公网使用本地模型，需要单独部署模型服务并做好认证与网络隔离。
 
+RAG 知识文档和本地向量索引已包含在仓库与 Python 进程中，不需要配置 Embedding API Key 或向量数据库。只有配置支持工具调用的 AI 模型后，Agent 才会调用知识检索；实时天气仍使用所选天气 Provider。
+
 若 LangChain 升级后出现兼容问题，可临时把 `AGENT_ENGINE` 改为 `native` 并重新部署。该开关只改变 Agent 编排实现，不改变天气 Provider、模型配置或 `/chat` 契约；系统不会静默回退。
 
 ## 5. 回滚

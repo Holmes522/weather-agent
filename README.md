@@ -1,6 +1,6 @@
 # Weather Query Agent MVP
 
-一个以天气为核心的轻量 AI Agent。它提供网页首页和 `POST /chat`：未配置模型时仍是免费的规则天气助手；配置 OpenAI 兼容模型后，可以进行普通聊天、多轮对话，并由模型按需调用只读天气工具取得真实数据。
+一个以天气为核心的轻量 AI Agent。它提供网页首页和 `POST /chat`：未配置模型时仍是免费的规则天气助手；配置 OpenAI 兼容模型后，可以进行普通聊天、多轮对话，并由模型按需组合实时天气工具与本地天气知识 RAG。
 
 ## 功能
 
@@ -19,9 +19,11 @@
 - 一次请求最多提取 5 个城市，并按用户输入顺序返回结果。
 - 可选连接 OpenAI、DeepSeek、OpenRouter、智谱 GLM、Kimi、通义千问、豆包、Gemini、本机 Ollama 或自定义 OpenAI 兼容接口。
 - 本机配置页可同时保存最多 20 个 AI 模型配置并自由切换；新增模型不会覆盖旧模型。
-- AI 模型只拥有 `get_weather` 工具；不能执行命令、浏览网页、读写文件或控制电脑。
+- 默认 LangChain Agent 拥有只读的 `get_weather` 和 `search_weather_knowledge` 工具；可以把实时天气与雷雨、暴雨、高温、寒冷、大风等权威安全资料组合成建议，并在回答下方显示实际来源。
+- RAG 使用仓库内经过校验的 Markdown 和本地 Hash Embeddings，不需要额外的 Embedding API Key；实时天气仍只来自天气 Provider，知识库不能替代官方预警。
+- Agent 不能执行命令、浏览网页、读取任意文件或控制电脑。
 - 默认使用 LangChain `create_agent`（由 LangGraph 运行）编排模型与工具；可通过环境变量明确回滚到原生引擎。
-- 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多调用两次天气工具、三次模型。
+- 模型参数、工具参数和第三方响应均在代码边界校验；每轮最多两次天气工具、一次知识检索、三次全部工具和四次模型调用。
 
 ## 项目结构
 
@@ -30,6 +32,13 @@
 ├── app.py
 ├── agent.py
 ├── langchain_agent.py
+├── knowledge_base.py
+├── knowledge/
+│   ├── thunderstorm-safety.md
+│   ├── heavy-rain-flood-safety.md
+│   ├── heat-health-safety.md
+│   ├── cold-weather-safety.md
+│   └── strong-wind-safety.md
 ├── llm_client.py
 ├── llm_registry.py
 ├── weather_export.py
@@ -60,6 +69,7 @@
 ├── .env.example
 ├── .gitignore
 ├── SPEC.md
+├── SPEC-rag-weather-knowledge.md
 ├── tasks/
 │   ├── plan.md
 │   └── todo.md
@@ -175,6 +185,8 @@ Claude 官方直连接口不是 OpenAI Chat Completions 协议，因此本版本
 
 在输入框中可以直接询问完整天气、单项指标或出行建议。启用 AI 后还可以进行基础问答、解释、写作和总结；天气问题会自动调用真实数据源。左侧可以新建、切换和删除历史对话，切换后会恢复用户消息、AI 文本、天气卡片和导出下载入口；手机端点击左上角菜单按钮打开历史抽屉。进入配置页再返回时也会恢复离开前的当前对话。后端最多给模型使用最近 12 条普通对话消息，并为每个会话单独记住天气上下文。右上角可以自由切换天气数据源和已保存的 AI 模型；浏览器只记住天气服务 ID、模型配置 ID 和当前对话 ID，API Key 不会写入浏览器存储。
 
+RAG 示例：`深圳明天打雷还适合爬山吗？` 会让 Agent 同时查询深圳明天的实时天气和雷电安全资料；`雷雨天气户外应该注意什么？` 只检索稳定知识，不会为无关城市发起天气请求。实际使用知识库时，回答下方会显示可点击的官方来源，切换历史对话后来源仍会恢复。RAG 默认随 LangChain 引擎启用，不需要环境变量；切换到 `AGENT_ENGINE=native` 时只保留原生天气工具循环。
+
 全球城市可以直接输入中文或英文名称，例如 `纽约明天天气`、`Tokyo tomorrow weather`。遇到同名城市时建议同时提供国家或地区，例如 `Paris, France明天天气怎么样？` 或 `What's the weather in Paris, France tomorrow?`。询问“可以查询国外城市吗”时，系统只说明能力范围，不会把“国外”误当成城市查询。
 
 天气导出示例：先问 `深圳和广州明天天气怎么样？`，再问 `把刚才天气导出为 Excel`；也可以一句话发送 `把深圳和广州明天天气导出为 PDF`。行程示例：`依次查看北京、深圳、广州、长沙的天气，输出 Excel，我住在杭州，每个城市待一天` 会按明天起逐城分配日期；如果只说 `北京和深圳出差 3 天，输出 Excel` 而没有说明顺序，则文件会包含两座城市各自未来 3 天的数据。文件生成后聊天区只显示下载入口，逐行建议和汇总出行清单都写入文件。支持 `Word`/`docx`、`Excel`/`xlsx`/`execl`、`PDF` 和 `Markdown`/`md`。导出链接保存在当前服务进程中，约 1 小时后失效。
@@ -231,7 +243,7 @@ curl -X POST http://127.0.0.1:5000/chat \
 
 `provider` 也是可选字段：未传时使用 `WEATHER_PROVIDER`，可选值为 `openmeteo`、`openweather`、`qweather`、`weatherapi` 或 `visualcrossing`。`openmeteo` 无需凭据；其他 Provider 只有配置对应凭据后才能选择。
 
-配置模型后，成功响应增加 `mode: "agent"`、`model` 和 `tool_used`。普通聊天只返回文本；天气工具调用仍返回兼容的 `city`、`weather` 与 `results`。未配置模型时，非天气消息返回 `AI_NOT_CONFIGURED`，不会把普通问题误当成城市查询。
+配置模型后，成功响应增加 `mode: "agent"`、`model`、`tool_used`、`rag_used` 和 `knowledge_sources`。只有实际检索到知识时 `rag_used` 才为 `true`，来源项包含标题、章节、来源名称和官方 HTTPS URL；普通聊天返回空来源数组。天气工具调用仍返回兼容的 `city`、`weather` 与 `results`。未配置模型时，非天气消息返回 `AI_NOT_CONFIGURED`，不会把普通问题误当成城市查询。
 
 本机模型配置接口为：`GET /api/llm` 列出已保存模型，`POST /api/llm` 新增并设为当前模型，`PATCH /api/llm/active` 按安全配置 ID 切换。`POST /chat` 可选传入 `llm_id`。这些接口从不返回 API Key，生产环境会关闭配置接口。
 
@@ -298,8 +310,9 @@ python app.py
 - 普通聊天能力取决于用户配置的第三方模型；消息和最近有限历史会发送给该服务，费用与数据处理规则以对应服务为准。
 - 运行时新增的天气服务和 AI 模型配置只保存在当前进程；浏览器只保存选择 ID，重启 Flask 后需要重新添加。环境变量模型会在启动时自动恢复。
 - 行程导出一次最多 5 个目的地、未来 7 天和 35 条天气记录，单文件最多 2 MiB；临时下载存储有数量上限并约 1 小时过期，不适合作为长期文件存储。个别天气服务或套餐的预报天数可能更短，超出时会返回天气服务不可用提示。
-- Agent 当前只有只读天气工具，不具备 Codex 或 Claude Code 的文件、终端、网页浏览和代码执行能力。
-- 工具只支持今天、明天和后天；每轮最多两次工具调用、三次模型调用，模型回复最多 4000 字符。
+- Agent 只有只读实时天气和固定天气知识检索工具，不具备 Codex 或 Claude Code 的文件、终端、网页浏览和代码执行能力。
+- 本地 Hash Embeddings 适合当前小型、固定、中文天气知识库，但语义召回能力弱于商用 Embedding 模型；知识更新需要人工审查并提交 Markdown，服务启动后不在线抓取网页。
+- 天气工具只支持今天、明天和后天；每轮最多两次天气工具、一次知识检索、三次全部工具和四次模型调用，模型回复最多 4000 字符。
 - 当 `APP_ENV=production` 时，配置页和配置接口直接返回 404；天气凭据必须通过托管平台的环境变量设置。
 - 免费部署使用单 Worker，以保证当前内存会话和限流状态一致；扩容前应迁移到 Redis。
 - 公共 Nominatim 服务限制整个应用每秒最多一次请求；项目会缓存结果并串行调用，适合中低流量演示。全球检索范围取决于 OpenStreetMap 的地点数据，同名或较小聚落建议补充国家/地区。高流量部署应通过 `GEOCODING_API_URL` 切换到自托管或商业兼容端点。
@@ -329,6 +342,12 @@ python app.py
 - LangChain Agents：<https://docs.langchain.com/oss/python/langchain/agents>
 - LangChain Tools：<https://docs.langchain.com/oss/python/langchain/tools>
 - LangChain Middleware：<https://docs.langchain.com/oss/python/langchain/middleware/overview>
+- LangChain Retrieval：<https://docs.langchain.com/oss/python/langchain/retrieval>
+- LangGraph Agentic RAG：<https://docs.langchain.com/oss/python/langgraph/agentic-rag>
+- LangChain Embeddings：<https://docs.langchain.com/oss/python/integrations/embeddings>
+- 中国气象局雷电安全规范：<https://www.cma.gov.cn/zfxxgk/gknr/flfgbz/bz/202505/P020250512117538288150.pdf>
+- 应急管理部暴雨洪涝防范：<https://www.mem.gov.cn/xw/xwfbh/2025n08y05xwfbh/>
+- 国家卫生健康委高温健康防护：<https://www.nhc.gov.cn/zyjks/c100152/202406/0f0267211d25499b86d30f0f40a394cb.shtml>
 - 智谱 GLM Chat Completions：<https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5>
 - Moonshot Kimi API：<https://platform.kimi.com/docs/api/overview>
 - 阿里云百炼 OpenAI 兼容 API：<https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions>

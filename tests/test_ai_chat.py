@@ -111,6 +111,7 @@ def test_capability_question_returns_truthful_scope_without_model_guessing():
     body = response.get_json()
     assert "全球城市" in body["answer"]
     assert "Word、Excel、PDF 或 Markdown" in body["answer"]
+    assert "天气安全资料" in body["answer"]
     assert body["mode"] == "agent"
     assert body["agent_engine"] == "langchain"
     assert body["model"] == "测试模型"
