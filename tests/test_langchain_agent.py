@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from agent import AgentLimitError, AgentProtocolError, WeatherToolInput
+from agent import AgentLimitError, AgentProtocolError, KnowledgeSource, WeatherToolInput
+from knowledge_base import KnowledgeChunk
 from langchain_agent import ExistingChatModelAdapter, run_langchain_agent
 from llm_client import AssistantTurn, ToolCall
 
@@ -30,6 +31,14 @@ def weather_call(call_id="call-1", arguments=None):
             or {"cities": ["深圳"], "day_offset": 1, "detail": "advice"},
             ensure_ascii=False,
         ),
+    )
+
+
+def knowledge_call(call_id="knowledge-1", query="雷雨天爬山安全吗"):
+    return ToolCall(
+        call_id=call_id,
+        name="search_weather_knowledge",
+        arguments_json=json.dumps({"query": query}, ensure_ascii=False),
     )
 
 
@@ -173,3 +182,92 @@ def test_langchain_does_not_swallow_weather_provider_errors():
             user_message="深圳明天天气",
             weather_tool=failing_weather_tool,
         )
+
+
+def test_langchain_can_combine_live_weather_with_retrieved_knowledge():
+    model = FakeLLMClient(
+        [
+            AssistantTurn("", (weather_call(), knowledge_call())),
+            AssistantTurn("深圳明天有雷雨，不建议爬山，请改为室内活动。"),
+        ]
+    )
+    searched = []
+    source_url = "https://www.cma.gov.cn/safety/thunderstorm"
+
+    def knowledge_search(query):
+        searched.append(query)
+        return (
+            KnowledgeChunk(
+                content="雷电来临时应停止爬山和露营。",
+                title="雷电天气户外安全指南",
+                section="户外活动调整",
+                source_name="中国气象局",
+                source_url=source_url,
+                score=0.82,
+            ),
+        )
+
+    result = run_langchain_agent(
+        client=model,
+        history=[],
+        user_message="深圳明天打雷，还适合爬山吗？",
+        weather_tool=lambda value: {"results": [{"city": "深圳", "rain": True}]},
+        knowledge_search=knowledge_search,
+    )
+
+    assert searched == ["雷雨天爬山安全吗"]
+    assert result.answer == "深圳明天有雷雨，不建议爬山，请改为室内活动。"
+    assert result.knowledge_sources == (
+        KnowledgeSource(
+            title="雷电天气户外安全指南",
+            section="户外活动调整",
+            source_name="中国气象局",
+            source_url=source_url,
+        ),
+    )
+    assert {tool["function"]["name"] for tool in model.calls[0]["tools"]} == {
+        "get_weather",
+        "search_weather_knowledge",
+    }
+    tool_messages = [
+        item for item in model.calls[1]["messages"] if item["role"] == "tool"
+    ]
+    assert len(tool_messages) == 2
+    assert any("停止爬山" in item["content"] for item in tool_messages)
+
+
+def test_langchain_limits_knowledge_search_to_one_call():
+    model = FakeLLMClient(
+        [
+            AssistantTurn("", (knowledge_call("knowledge-1"),)),
+            AssistantTurn("", (knowledge_call("knowledge-2"),)),
+        ]
+    )
+    searched = []
+
+    with pytest.raises(AgentLimitError):
+        run_langchain_agent(
+            client=model,
+            history=[],
+            user_message="反复搜索雷雨资料",
+            weather_tool=lambda value: {"results": []},
+            knowledge_search=lambda query: searched.append(query) or (),
+        )
+
+    assert searched == ["雷雨天爬山安全吗"]
+
+
+def test_langchain_rejects_invalid_knowledge_query_before_search():
+    model = FakeLLMClient([AssistantTurn("", (knowledge_call(query="雷" * 201),))])
+    searched = []
+
+    with pytest.raises(AgentProtocolError):
+        run_langchain_agent(
+            client=model,
+            history=[],
+            user_message="查资料",
+            weather_tool=lambda value: {"results": []},
+            knowledge_search=lambda query: searched.append(query) or (),
+        )
+
+    assert searched == []
