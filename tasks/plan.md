@@ -129,3 +129,11 @@ parser + session_store + weather_client → /chat
 3. 把知识检索注册为 Agentic RAG 工具，与实时天气工具保持独立事实边界。
 4. 在 `/chat`、当前聊天和历史对话中展示实际使用的权威来源。
 5. 完成检索评测、Agent/API/UI 回归、安全审查、浏览器验证和远端 CI。
+
+## Explicit LangGraph Workflow Upgrade
+
+1. 固定显式图状态、节点、条件边、终止条件和调用预算契约。
+2. 复用现有模型适配器与安全 Tool，将编排迁移到 `StateGraph` 和 `ToolNode`。
+3. 默认引擎切换为 `langgraph`，保留 `langchain` 配置别名和 `native` 回滚。
+4. 保持 `/chat`、天气、RAG、历史记录与导出响应兼容。
+5. 完成焦点测试、完整回归、安全/质量审查、文档和远端 CI。
