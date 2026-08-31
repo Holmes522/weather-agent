@@ -165,7 +165,7 @@ def run_langchain_agent(
         middleware=middleware,
         name="weather_agent",
     )
-    messages: List[BaseMessage] = _history_messages(history)
+    messages: List[BaseMessage] = history_messages(history)
     messages.append(HumanMessage(content=user_message))
 
     try:
@@ -174,7 +174,7 @@ def run_langchain_agent(
     except (ToolCallLimitExceededError, ModelCallLimitExceededError) as error:
         raise AgentLimitError("agent execution limit exceeded") from error
 
-    final_message = _final_answer_message(output.get("messages", []))
+    final_message = final_answer_message(output.get("messages", []))
     return AgentRunResult(
         answer=final_message.content,
         tool_results=tuple(tool_runtime.tool_results),
@@ -183,7 +183,7 @@ def run_langchain_agent(
     )
 
 
-def _history_messages(history: Sequence[Dict[str, str]]) -> List[BaseMessage]:
+def history_messages(history: Sequence[Dict[str, str]]) -> List[BaseMessage]:
     messages: List[BaseMessage] = []
     for item in normalize_history(history):
         message_type = HumanMessage if item["role"] == "user" else AIMessage
@@ -240,7 +240,7 @@ def _text_content(content: object) -> str:
     return content
 
 
-def _final_answer_message(messages: object) -> AIMessage:
+def final_answer_message(messages: object) -> AIMessage:
     if not isinstance(messages, list):
         raise AgentProtocolError("agent result is invalid")
     for message in reversed(messages):
