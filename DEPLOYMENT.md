@@ -13,7 +13,7 @@ Blueprint 会自动设置：
 
 - 免费 Web Service；
 - `WEATHER_PROVIDER=openmeteo`，无需 API Key；
-- `AGENT_ENGINE=langchain`，启用 LangChain/LangGraph 编排；
+- `AGENT_ENGINE=langgraph`，启用显式 LangGraph 状态图编排；
 - `APP_ENV=production`，关闭公网配置页；
 - 每个客户端每分钟最多 30 次聊天请求；
 - Gunicorn 单 Worker、四线程；
@@ -73,7 +73,7 @@ LLM_DISPLAY_NAME=DeepSeek
 
 RAG 知识文档和本地向量索引已包含在仓库与 Python 进程中，不需要配置 Embedding API Key 或向量数据库。只有配置支持工具调用的 AI 模型后，Agent 才会调用知识检索；实时天气仍使用所选天气 Provider。
 
-若 LangChain 升级后出现兼容问题，可临时把 `AGENT_ENGINE` 改为 `native` 并重新部署。该开关只改变 Agent 编排实现，不改变天气 Provider、模型配置或 `/chat` 契约；系统不会静默回退。
+若 LangGraph 升级后出现兼容问题，可临时把 `AGENT_ENGINE` 改为 `native` 并重新部署。旧值 `langchain` 会自动映射到 `langgraph`。该开关只改变 Agent 编排实现，不改变天气 Provider、模型配置或 `/chat` 其他契约；系统不会静默回退。
 
 ## 5. 回滚
 
