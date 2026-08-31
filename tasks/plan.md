@@ -113,3 +113,11 @@ parser + session_store + weather_client → /chat
 3. 导出文件逐行写入完整天气和出行建议，并增加天气驱动的出行清单。
 4. 文件生成成功后返回纯下载响应，不在聊天框重复天气明细。
 5. 用截图中的真实句式、无顺序矩阵、四种文件重开、浏览器和完整回归测试验证。
+
+## LangChain Agent Engine Upgrade
+
+1. 将 Python 基线提升到 3.10，固定 LangChain 1.3 稳定版本，并增加 `AGENT_ENGINE` 配置。
+2. 新增 LangChain 模型适配器，让现有安全 HTTP 客户端继续支持已配置的 OpenAI 兼容模型。
+3. 使用 `create_agent`、只读天气 Tool 和调用限制 Middleware 替换默认手写循环，同时保留 native 回滚路径。
+4. 保持 `/chat`、天气卡、会话与导出契约兼容，在响应中暴露实际 Agent 引擎。
+5. 完成焦点测试、完整回归、依赖审查、安全审查、README 与远端 CI。
